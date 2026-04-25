@@ -6965,15 +6965,7 @@ async function loadPlayers() {
 
       rebuildDerivedData();
       _playersLoaded = true;
-      // DEBUG
-      console.log('PLAYERS loaded:', PLAYERS.length);
-      if(PLAYERS.length > 0) {
-        const p = PLAYERS[0];
-        console.log('Sample player:', p.name, '| age:', p.age, '| score:', p.score, '| position:', p.position, '| contract_end:', p.contract_end);
-        console.log('filts:', JSON.stringify(filts));
-        console.log('matchFilts test:', matchFilts(p));
-        console.log('matchPos test:', matchPos(p));
-      }
+
       if (loadEl) loadEl.style.display = 'none';
       return PLAYERS;
     } catch (err) {
@@ -7194,12 +7186,12 @@ function matchLeague(p){
   return selLeagues.includes(p.league);
 }
 function matchFilts(p){
-  const yr=p.contract_end ? parseInt(p.contract_end.split('-')[0]) : 2099;
-  const age=p.age||0;
+  const age=p.age||20;
   const score=parseFloat(p.score)||0;
-  return age>=filts.ageMin&&age<=filts.ageMax
-    &&yr>=filts.ctMin&&yr<=filts.ctMax
-    &&score>=filts.scMin;
+  // If no contract_end, don't filter by contract year
+  const yr=p.contract_end ? parseInt(p.contract_end.split('-')[0]) : null;
+  const ctOk = yr===null || (yr>=filts.ctMin && yr<=filts.ctMax);
+  return age>=filts.ageMin&&age<=filts.ageMax&&ctOk&&score>=filts.scMin;
 }
 function getFiltered(){
   const q=document.getElementById('search-global')?.value.toLowerCase()||'';
