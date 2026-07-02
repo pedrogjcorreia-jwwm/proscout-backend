@@ -26,6 +26,16 @@ app.get('/cleanup', async (req, res) => {
   }
 });
 
+// ── Cleanup CF only — apaga só os avançados, preserva WIN e outras posições ──
+app.get('/cleanup/cf', async (req, res) => {
+  try {
+    const result = await pool.query("DELETE FROM players WHERE position_group = 'CF'");
+    res.json({ deleted: result.rowCount, position: 'CF', message: 'CF players deleted. WIN and others kept.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── Setup — creates all tables (run once) ─────────────────────────────────
 app.get('/setup', async (req, res) => {
   try {
