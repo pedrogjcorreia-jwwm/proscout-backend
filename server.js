@@ -386,4 +386,18 @@ app.get('/import/cf', async (req, res) => {
   }
 });
 
+
+// ── GET /diag/cf-conflicts — jogadores do CF cujo (nome,liga) colide com outra posição na BD ──
+app.get('/diag/cf-conflicts', async (req, res) => {
+  try {
+    const fs = require('fs');
+    const { players } = JSON.parse(fs.readFileSync(__dirname + '/CF_players.json', 'utf8'));
+    const cfKeys = new Set(players.map(p => p.name + '|' + p.league));
+    const r = await pool.query("SELECT name, league, position_group, position, score FROM players WHERE position_group <> 'CF'");
+    const conflicts = r.rows.filter(row => cfKeys.has(row.name + '|' + row.league));
+    const cfCount = await pool.query("SELECT COUNT(*) FROM players WHERE position_group = 'CF'");
+    res.json({ cf_in_db: Number(cfCount.rows[0].count), cf_in_file: players.length, conflict_count: conflicts.length, conflicts });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 app.listen(PORT, () => console.log(`ProScout API running on port ${PORT}`));
