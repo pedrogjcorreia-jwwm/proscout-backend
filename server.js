@@ -330,9 +330,13 @@ app.get('/import/cf', async (req, res) => {
     if (!players || !Array.isArray(players)) return res.status(400).json({ error: 'Ficheiro inválido' });
     const client = await pool.connect();
     let inserted = 0, updated = 0;
+    const skipped = [];
     try {
       await client.query('BEGIN');
+      const others = await client.query("SELECT name, league FROM players WHERE position_group <> 'CF'");
+      const otherKeys = new Set(others.rows.map(r => r.name + '|' + r.league));
       for (const p of players) {
+        if (otherKeys.has(p.name + '|' + p.league)) { skipped.push({ name: p.name, league: p.league }); continue; }
         const result = await client.query(
           `INSERT INTO players (
             name, country, team, league, league_level, position, position_group,
@@ -380,7 +384,7 @@ app.get('/import/cf', async (req, res) => {
     } catch (e) {
       await client.query('ROLLBACK'); throw e;
     } finally { client.release(); }
-    res.json({ position, inserted, updated, total: players.length });
+    res.json({ position, inserted, updated, skipped: skipped.length, skipped_players: skipped, total: players.length });
   } catch (err) {
     console.error(err); res.status(500).json({ error: err.message });
   }
@@ -397,6 +401,22 @@ app.get('/diag/cf-conflicts', async (req, res) => {
     const conflicts = r.rows.filter(row => cfKeys.has(row.name + '|' + row.league));
     const cfCount = await pool.query("SELECT COUNT(*) FROM players WHERE position_group = 'CF'");
     res.json({ cf_in_db: Number(cfCount.rows[0].count), cf_in_file: players.length, conflict_count: conflicts.length, conflicts });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+
+// ── GET /fix/cf-takeover — remove versões NÃO-CF de jogadores decididos como CF (nome+liga do ficheiro) ──
+app.get('/fix/cf-takeover', async (req, res) => {
+  try {
+    const fs = require('fs');
+    const { players } = JSON.parse(fs.readFileSync(__dirname + '/CF_players.json', 'utf8'));
+    const cfKeys = new Set(players.map(p => p.name + '|' + p.league));
+    const others = await pool.query("SELECT name, league, position_group FROM players WHERE position_group <> 'CF'");
+    const toDelete = others.rows.filter(r => cfKeys.has(r.name + '|' + r.league));
+    for (const r of toDelete) {
+      await pool.query("DELETE FROM players WHERE name=$1 AND league=$2 AND position_group <> 'CF'", [r.name, r.league]);
+    }
+    res.json({ deleted_count: toDelete.length, deleted: toDelete });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
