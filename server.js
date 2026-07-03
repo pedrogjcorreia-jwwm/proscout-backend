@@ -320,4 +320,70 @@ app.post('/import/players', async (req, res) => {
 
 // ── Start ──────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3001;
+
+// ── GET /import/cf — importa o CF_players.json commitado no repo (só cliques, sem PowerShell) ──
+app.get('/import/cf', async (req, res) => {
+  try {
+    const fs = require('fs');
+    const raw = fs.readFileSync(__dirname + '/CF_players.json', 'utf8');
+    const { position, players } = JSON.parse(raw);
+    if (!players || !Array.isArray(players)) return res.status(400).json({ error: 'Ficheiro inválido' });
+    const client = await pool.connect();
+    let inserted = 0, updated = 0;
+    try {
+      await client.query('BEGIN');
+      for (const p of players) {
+        const result = await client.query(
+          `INSERT INTO players (
+            name, country, team, league, league_level, position, position_group,
+            age, foot, size, weight, mkt_value, contract_end, matches, minutes,
+            xg, xa, fouls, yellows, def_duels, def_duels_pct, adj_intercept,
+            goals_np, shots90, goals_per_shot, crosses90, crosses_pct,
+            dribles90, dribles_pct, box_touches, prog_carries, accels90,
+            passes90, passes_pct, shot_assist, box_passes, box_passes_pct, recpt_depth,
+            total_dist, hsr90, sprint_dist90, max_speed, sprints90, hsr_sprint_pct,
+            total_def, total_off, total_pass, total, total_physical,
+            score, has_physical,
+            off_duels90, off_duels_pct, aerial_duels90, aerial_pct, header_goals,
+            imported_at
+          ) VALUES (
+            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
+            $16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,
+            $30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,
+            $45,$46,$47,$48,$49,$50,$51,$52,$53,$54,$55,$56,NOW()
+          )
+          ON CONFLICT (name, league)
+          DO UPDATE SET
+            team=EXCLUDED.team, age=EXCLUDED.age, mkt_value=EXCLUDED.mkt_value,
+            contract_end=EXCLUDED.contract_end, matches=EXCLUDED.matches, minutes=EXCLUDED.minutes,
+            xg=EXCLUDED.xg, xa=EXCLUDED.xa, score=EXCLUDED.score,
+            total_off=EXCLUDED.total_off, total_def=EXCLUDED.total_def,
+            total_pass=EXCLUDED.total_pass, total_physical=EXCLUDED.total_physical,
+            has_physical=EXCLUDED.has_physical, imported_at=NOW()
+          RETURNING (xmax = 0) as is_insert`,
+          [
+            p.name, p.country, p.team, p.league, p.league_level || null, p.position, position,
+            p.age, p.foot, p.size, p.weight, p.mkt_value, p.contract_end, p.matches, p.minutes,
+            p.xg, p.xa, p.fouls, p.yellows, p.def_duels, p.def_duels_pct, p.adj_intercept,
+            p.goals_np, p.shots90, p.goals_per_shot, p.crosses90, p.crosses_pct,
+            p.dribles90, p.dribles_pct, p.box_touches, p.prog_carries, p.accels90,
+            p.passes90, p.passes_pct, p.shot_assist, p.box_passes, p.box_passes_pct, p.recpt_depth,
+            p.total_dist, p.hsr90, p.sprint_dist90, p.max_speed, p.sprints90, p.hsr_sprint_pct,
+            p.total_def, p.total_off, p.total_pass, p.total, p.total_physical,
+            p.score, p.has_physical,
+            p.off_duels90||null, p.off_duels_pct||null, p.aerial_duels90||null, p.aerial_pct||null, p.header_goals||null,
+          ]
+        );
+        if (result.rows[0]?.is_insert) inserted++; else updated++;
+      }
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK'); throw e;
+    } finally { client.release(); }
+    res.json({ position, inserted, updated, total: players.length });
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(PORT, () => console.log(`ProScout API running on port ${PORT}`));
