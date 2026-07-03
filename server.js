@@ -57,9 +57,16 @@ app.get('/setup', async (req, res) => {
         hsr_sprint_pct NUMERIC, total_def NUMERIC, total_off NUMERIC,
         total_pass NUMERIC, total NUMERIC, total_physical NUMERIC,
         score NUMERIC, sf_rating NUMERIC, has_physical BOOLEAN DEFAULT false,
+        off_duels90 NUMERIC, off_duels_pct NUMERIC, aerial_duels90 NUMERIC,
+        aerial_pct NUMERIC, header_goals NUMERIC,
         imported_at TIMESTAMP DEFAULT NOW(), updated_at TIMESTAMP DEFAULT NOW(),
         UNIQUE(name, league)
       );
+      ALTER TABLE players ADD COLUMN IF NOT EXISTS off_duels90 NUMERIC;
+      ALTER TABLE players ADD COLUMN IF NOT EXISTS off_duels_pct NUMERIC;
+      ALTER TABLE players ADD COLUMN IF NOT EXISTS aerial_duels90 NUMERIC;
+      ALTER TABLE players ADD COLUMN IF NOT EXISTS aerial_pct NUMERIC;
+      ALTER TABLE players ADD COLUMN IF NOT EXISTS header_goals NUMERIC;
       CREATE INDEX IF NOT EXISTS idx_players_position_group ON players(position_group);
       CREATE INDEX IF NOT EXISTS idx_players_league ON players(league);
       CREATE INDEX IF NOT EXISTS idx_players_score ON players(score DESC NULLS LAST);
@@ -250,12 +257,14 @@ app.post('/import/players', async (req, res) => {
             passes90, passes_pct, shot_assist, box_passes, box_passes_pct, recpt_depth,
             total_dist, hsr90, sprint_dist90, max_speed, sprints90, hsr_sprint_pct,
             total_def, total_off, total_pass, total, total_physical,
-            score, has_physical, imported_at
+            score, has_physical,
+            off_duels90, off_duels_pct, aerial_duels90, aerial_pct, header_goals,
+            imported_at
           ) VALUES (
             $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
             $16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,
             $30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,
-            $45,$46,$47,$48,$49,$50,$51,NOW()
+            $45,$46,$47,$48,$49,$50,$51,$52,$53,$54,$55,$56,NOW()
           )
           ON CONFLICT (name, league)
           DO UPDATE SET
@@ -276,6 +285,7 @@ app.post('/import/players', async (req, res) => {
             p.total_dist, p.hsr90, p.sprint_dist90, p.max_speed, p.sprints90, p.hsr_sprint_pct,
             p.total_def, p.total_off, p.total_pass, p.total, p.total_physical,
             p.score, p.has_physical,
+            p.off_duels90||null, p.off_duels_pct||null, p.aerial_duels90||null, p.aerial_pct||null, p.header_goals||null,
           ]
         );
         if (result.rows[0]?.is_insert) inserted++; else updated++;
