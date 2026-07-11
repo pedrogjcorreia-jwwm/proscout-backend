@@ -67,6 +67,7 @@ app.get('/setup', async (req, res) => {
       ALTER TABLE players ADD COLUMN IF NOT EXISTS aerial_duels90 NUMERIC;
       ALTER TABLE players ADD COLUMN IF NOT EXISTS aerial_pct NUMERIC;
       ALTER TABLE players ADD COLUMN IF NOT EXISTS header_goals NUMERIC;
+      ALTER TABLE players ADD COLUMN IF NOT EXISTS goals NUMERIC;
       CREATE INDEX IF NOT EXISTS idx_players_position_group ON players(position_group);
       CREATE INDEX IF NOT EXISTS idx_players_league ON players(league);
       CREATE INDEX IF NOT EXISTS idx_players_score ON players(score DESC NULLS LAST);
@@ -258,13 +259,13 @@ app.post('/import/players', async (req, res) => {
             total_dist, hsr90, sprint_dist90, max_speed, sprints90, hsr_sprint_pct,
             total_def, total_off, total_pass, total, total_physical,
             score, has_physical,
-            off_duels90, off_duels_pct, aerial_duels90, aerial_pct, header_goals,
+            off_duels90, off_duels_pct, aerial_duels90, aerial_pct, header_goals, goals,
             imported_at
           ) VALUES (
             $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
             $16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,
             $30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,
-            $45,$46,$47,$48,$49,$50,$51,$52,$53,$54,$55,$56,NOW()
+            $45,$46,$47,$48,$49,$50,$51,$52,$53,$54,$55,$56,$57,NOW()
           )
           ON CONFLICT (name, league)
           DO UPDATE SET
@@ -285,7 +286,7 @@ app.post('/import/players', async (req, res) => {
             p.total_dist, p.hsr90, p.sprint_dist90, p.max_speed, p.sprints90, p.hsr_sprint_pct,
             p.total_def, p.total_off, p.total_pass, p.total, p.total_physical,
             p.score, p.has_physical,
-            p.off_duels90||null, p.off_duels_pct||null, p.aerial_duels90||null, p.aerial_pct||null, p.header_goals||null,
+            p.off_duels90||null, p.off_duels_pct||null, p.aerial_duels90||null, p.aerial_pct||null, p.header_goals||null, p.goals||null,
           ]
         );
         if (result.rows[0]?.is_insert) inserted++; else updated++;
@@ -348,13 +349,13 @@ app.get('/import/cf', async (req, res) => {
             total_dist, hsr90, sprint_dist90, max_speed, sprints90, hsr_sprint_pct,
             total_def, total_off, total_pass, total, total_physical,
             score, has_physical,
-            off_duels90, off_duels_pct, aerial_duels90, aerial_pct, header_goals,
+            off_duels90, off_duels_pct, aerial_duels90, aerial_pct, header_goals, goals,
             imported_at
           ) VALUES (
             $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
             $16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,
             $30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,
-            $45,$46,$47,$48,$49,$50,$51,$52,$53,$54,$55,$56,NOW()
+            $45,$46,$47,$48,$49,$50,$51,$52,$53,$54,$55,$56,$57,NOW()
           )
           ON CONFLICT (name, league)
           DO UPDATE SET
@@ -375,7 +376,7 @@ app.get('/import/cf', async (req, res) => {
             p.total_dist, p.hsr90, p.sprint_dist90, p.max_speed, p.sprints90, p.hsr_sprint_pct,
             p.total_def, p.total_off, p.total_pass, p.total, p.total_physical,
             p.score, p.has_physical,
-            p.off_duels90||null, p.off_duels_pct||null, p.aerial_duels90||null, p.aerial_pct||null, p.header_goals||null,
+            p.off_duels90||null, p.off_duels_pct||null, p.aerial_duels90||null, p.aerial_pct||null, p.header_goals||null, p.goals||null,
           ]
         );
         if (result.rows[0]?.is_insert) inserted++; else updated++;
