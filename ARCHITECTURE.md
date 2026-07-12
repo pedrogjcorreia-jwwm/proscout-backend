@@ -1,5 +1,7 @@
 # THRIVELLA — Documento de Arquitetura (vivo)
 
+> **Última grande atualização:** migração dos CF para o backend concluída — todas as posições vêm da API pelo mesmo caminho, com normalização agnóstica no frontend. `_CF_DATA` embutido removido. Coluna `goals` (totais) adicionada. Market value corrigido (colunas GL/FE).
+
 > **Para o assistente (Claude):** lê este ficheiro no início de cada sessão. Descreve a app de A a Z — backend, frontend, pipeline de dados, processo de deploy e as armadilhas já encontradas. Mantém-no atualizado quando algo mudar.
 
 Última atualização: sessão de integração do CF (position_group `CF`, 2052 jogadores).
@@ -42,6 +44,7 @@ Thrivella é uma ferramenta de scouting de futebol. Para cada posição, pontua 
 | GET | `/setup` | Corre `CREATE TABLE IF NOT EXISTS` + `ALTER TABLE ADD COLUMN IF NOT EXISTS` (migrações) + índices. Não-destrutivo. **Correr após adicionar colunas novas.** |
 
 ### Base de dados — tabela `players`
+> Colunas de CF adicionadas por `/setup` (ALTER ADD IF NOT EXISTS): `off_duels90, off_duels_pct, aerial_duels90, aerial_pct, header_goals, goals`. `score = total` (técnico). Chave única `(name, league)`.
 
 Chave única: **`(name, league)`** → *um jogador só pode existir numa posição*. (Ver Armadilha #1.)
 
@@ -61,6 +64,8 @@ Colunas principais: `id` (serial), `name, country, team, league, league_level, p
 
 `index.html` — ficheiro único. Carrega os jogadores da API em `loadPlayers()` (lotes de 500, `sort=score`), preenche `let PLAYERS=[]` e filtra por `position_group` no browser (`groupMap = {…, 'CF':'CF'}`).
 
+**Normalização agnóstica (em `rebuildDerivedData`):** para `position_group !== 'WIN'`, os campos derivados são garantidos a partir da API: `xg90 = xg` (a API dá o por-90), `xg` de época = `xg90 × minutos/90`, `aerial_duels_pct = aerial_pct`, `pos2nd = split(position)` (**array**), `goals` fallback para `goals_np`. O `talent_index` (=OFF+DEF+PASS) e os `*_adj` são calculados para todos. O `total_physical_adj` é calculado **por-posição** (loop sobre `position_group`, cada um com o seu pool + `POS_MAX[pg].phy`, pesos velocidade 59% / sprint 31% / nº sprints 10%). **Já não existe `_CF_DATA` embutido** — todas as posições vêm da API pelo mesmo caminho. Para uma posição nova: basta o import no backend + (no máximo) a config de métricas-chave dessa posição.
+
 ### Ranking (comum a todas as posições)
 O seletor de posição já inclui CF. As colunas do ranking são comuns. Ao **expandir os totais** (Total OFF/DEF/PASS/Físico), mostra as métricas — e **isto é por-posição**:
 - **Desktop:** `function metricBox(groupKey, totalKey, …, posGroup)` → usa `posGroup==='CF' ? METRIC_GROUPS_CF : METRIC_GROUPS`. Chamado com `p.position_group`.
@@ -79,6 +84,8 @@ Configs: `METRIC_GROUPS`/`SH_METRIC_GROUPS` = WIN (crosses, prog carries, box pa
 
 - **Métricas em bruto:** colunas 8–40 (0-indexed): `goals_np=22, xg=23, header_goals=24, shots=25, goals_per_shot=26, dribles=27, dribles_pct=28, off_duels=29, off_duels_pct=30, box_touches=31, accels=32, passes=33, passes_pct=34, shot_assist=35, recpt_depth=36, total_dist=37, sprint_dist=38, max_speed=39, sprints=40, xa=10, def_duels=15, def_duels_pct=16, aerial_duels=17, aerial_pct=18, fouls=19, yellows=20`.
 - **Metadados:** `name=0, team=1, position=2, age=3, mkt_value=4, contract_end=5, matches=6, minutes=7, country=11, foot=12, size=13, weight=14`.
+- **⚠ Market value real:** vem das colunas **GL (193, template PHY) / FE (160, template NPHY)**, **não** da col4 (a col4 dava 0 para a maioria). Confirmar sempre a coluna certa por template ao importar uma posição nova.
+- **Golos totais (`goals`):** coluna à parte do `goals_np` (sem penálti). O backend guarda **ambos** (`goals` = totais, `goals_np` = sem penálti). O frontend usa `goals` (ex.: Haaland 22) e cai para `goals_np` se faltar.
 - **Totais — DOIS templates:**
   - **PHY** (com físico): `total_def=300, total_off=301, total_pass=302, total=303, total_physical=309`.
   - **NPHY** (sem físico): `total_def=251, total_off=252, total_pass=253, total=254`, sem físico.
@@ -126,6 +133,11 @@ Os endpoints do Railway **não são alcançáveis** do ambiente do assistente (s
 6. **Elite top-30** (para estudo de pesos) inclui **extremos** (Vinícius, Dembélé…) — contamina o sinal de "traços de elite" para xA/dribles. Para um modelo de 9-puro, usar sinais limpos de posição (top-5 por liga + transferências), não a elite.
 7. **Duplicados no Excel:** mesmo (name, league) pode aparecer 2× (transferências a meio da época, registos parciais, ou homónimos). Dedup + decidir caso a caso.
 8. **Reconstruir vs saber:** o assistente **não** guarda estado entre sessões. Este documento existe para mitigar isso — ler primeiro, atualizar sempre.
+9. **`pos2nd` TEM de ser array.** A célula da tabela faz `(p.pos2nd||[]).map(...)`. Se vier string/null, rebenta e a **tabela inteira fica vazia** (dados ficam em memória → pesquisa/shadow funcionam, mas o ranking não desenha). Normalizar como `split(position)` e proteger o uso com `Array.isArray`.
+10. **AI (Liga Adjust) por defeito no mobile:** o IIFE de arranque não pode esperar pelo botão do **desktop** (`btn-liga-adjust-th`) — não existe no mobile. Esperar só pelos `PLAYERS` e re-renderizar a tabela mobile (`renderMobileTable`).
+11. **Impacto/Potencial no mobile estavam trocados:** Impacto usa **talento** (`tiPctL`), Potencial usa **transfer score** (`tsScore`). O desktop usa fórmula mais rica (impacto: +rank liga +minutos; potencial: +idade +física +margem) — os rótulos coincidem quase sempre, mas jogadores-fronteira podem diferir um nível.
+12. **Card do Shadow mobile no topo (CF):** com `translate(-50%,-100%)` cresce para cima e sai do campo. Para posições no topo (`topPct < 22`), crescer para baixo (`translate(-50%,0)`) e **inverter a ordem da pilha** (usar o índice `i`, não `stackPos = length-1-i`), senão fica 3-2-1 em vez de 1-2-3.
+13. **Backend só alcançável pelo utilizador:** o assistente não tem credenciais de push nem acesso ao Railway (só GitHub/PyPI/npm). Gera os ficheiros (`server.js`, `<POS>_players.json`, `index.html`) e o **utilizador** faz commit + corre os endpoints no browser.
 
 ---
 
@@ -134,5 +146,5 @@ Os endpoints do Railway **não são alcançáveis** do ambiente do assistente (s
 | Posição | Estudo | Import | Frontend (menus) |
 |---|---|---|---|
 | **WIN** | concluído | em produção | em produção |
-| **CF** | concluído (9-puro, Box Touches âncora) | **em produção (2052)** | **por-posição, desktop+mobile** |
+| **CF** | concluído (9-puro, Box Touches âncora) | **em produção (2052, da API)** | **da API, uniformizado (norm. agnóstica); `_CF_DATA` removido** |
 | CB, DM, FB… | por fazer | — | — |
