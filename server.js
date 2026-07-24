@@ -421,4 +421,174 @@ app.get('/fix/cf-takeover', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+
+// ============================================================================
+// THRIVELLA — Agentes (CRM)  [inserido automaticamente]
+// Tabelas criadas via GET /agents/setup (nao-destrutivo).
+// ============================================================================
+  // ---- migração (não-destrutiva, à imagem do /setup existente) ----
+  app.get('/agents/setup', async (req, res) => {
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS agents (
+          id            SERIAL PRIMARY KEY,
+          company       TEXT NOT NULL,
+          website       TEXT,
+          photo_url     TEXT,
+          rating        SMALLINT DEFAULT 0,          -- 0..5 estrelas
+          email         TEXT,
+          phone         TEXT,
+          whatsapp      TEXT,
+          languages     TEXT,                        -- livre: "PT, EN, ES"
+          num_players   INTEGER DEFAULT 0,           -- editável à mão
+          portfolio_val BIGINT  DEFAULT 0,           -- editável à mão (em euros)
+          status        TEXT DEFAULT 'cold',         -- cold | contact | established
+          notes_ctx     TEXT,                        -- notas de contexto do perfil
+          created_at    TIMESTAMPTZ DEFAULT now(),
+          updated_at    TIMESTAMPTZ DEFAULT now()
+        );`);
+      // jogadores da app associados ao agente (opcional, só para quem existe na BD)
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS agent_players (
+          id         SERIAL PRIMARY KEY,
+          agent_id   INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+          player_name TEXT NOT NULL,
+          player_league TEXT,
+          created_at TIMESTAMPTZ DEFAULT now(),
+          UNIQUE(agent_id, player_name, player_league)
+        );`);
+      // notas / histórico (chamada, email, reunião, proposta) — trata do CRM
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS agent_notes (
+          id         SERIAL PRIMARY KEY,
+          agent_id   INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+          kind       TEXT NOT NULL DEFAULT 'note',   -- call | email | meeting | proposal | note
+          body       TEXT NOT NULL,
+          entry_date DATE DEFAULT CURRENT_DATE,
+          created_at TIMESTAMPTZ DEFAULT now()
+        );`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_notes_agent   ON agent_notes(agent_id);`);
+      await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_players_agent ON agent_players(agent_id);`);
+      res.json({ ok: true, tables: ['agents', 'agent_players', 'agent_notes'] });
+    } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+  });
+
+  // ---- LISTA (para o ecrã tipo ranking) ----
+  app.get('/agents', async (req, res) => {
+    try {
+      const { rows } = await pool.query(`
+        SELECT a.*,
+          (SELECT COUNT(*) FROM agent_notes n WHERE n.agent_id=a.id)        AS notes_count,
+          (SELECT COUNT(*) FROM agent_players p WHERE p.agent_id=a.id)       AS linked_count,
+          (SELECT MAX(entry_date) FROM agent_notes n WHERE n.agent_id=a.id)  AS last_contact
+        FROM agents a
+        ORDER BY a.rating DESC, a.company ASC;`);
+      res.json({ agents: rows });
+    } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+  });
+
+  // ---- FICHA completa de um agente ----
+  app.get('/agents/:id', async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const a = await pool.query(`SELECT * FROM agents WHERE id=$1;`, [id]);
+      if (!a.rows.length) return res.status(404).json({ error: 'not found' });
+      const players = await pool.query(`SELECT * FROM agent_players WHERE agent_id=$1 ORDER BY player_name;`, [id]);
+      const notes   = await pool.query(`SELECT * FROM agent_notes WHERE agent_id=$1 ORDER BY entry_date DESC, id DESC;`, [id]);
+      res.json({ agent: a.rows[0], players: players.rows, notes: notes.rows });
+    } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+  });
+
+  // ---- CRIAR ----
+  app.post('/agents', async (req, res) => {
+    try {
+      const b = req.body || {};
+      if (!b.company || !String(b.company).trim()) return res.status(400).json({ error: 'company obrigatório' });
+      const { rows } = await pool.query(`
+        INSERT INTO agents (company, website, photo_url, rating, email, phone, whatsapp, languages, num_players, portfolio_val, status, notes_ctx)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *;`,
+        [String(b.company).trim(), b.website||null, b.photo_url||null, Math.max(0,Math.min(5,parseInt(b.rating,10)||0)),
+         b.email||null, b.phone||null, b.whatsapp||null, b.languages||null,
+         parseInt(b.num_players,10)||0, parseInt(b.portfolio_val,10)||0, b.status||'cold', b.notes_ctx||null]);
+      res.json({ agent: rows[0] });
+    } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+  });
+
+  // ---- ATUALIZAR (campos parciais) ----
+  app.put('/agents/:id', async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const b = req.body || {};
+      const allowed = ['company','website','photo_url','rating','email','phone','whatsapp','languages','num_players','portfolio_val','status','notes_ctx'];
+      const sets = [], vals = []; let i = 1;
+      for (const k of allowed) if (k in b) {
+        let v = b[k];
+        if (k === 'rating') v = Math.max(0, Math.min(5, parseInt(v,10)||0));
+        if (k === 'num_players' || k === 'portfolio_val') v = parseInt(v,10)||0;
+        sets.push(`${k}=$${i++}`); vals.push(v);
+      }
+      if (!sets.length) return res.status(400).json({ error: 'nada para atualizar' });
+      sets.push(`updated_at=now()`);
+      vals.push(id);
+      const { rows } = await pool.query(`UPDATE agents SET ${sets.join(', ')} WHERE id=$${i} RETURNING *;`, vals);
+      if (!rows.length) return res.status(404).json({ error: 'not found' });
+      res.json({ agent: rows[0] });
+    } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+  });
+
+  // ---- APAGAR (cascata para notas e jogadores) ----
+  app.delete('/agents/:id', async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      await pool.query(`DELETE FROM agents WHERE id=$1;`, [id]);
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+  });
+
+  // ---- NOTAS: adicionar ----
+  app.post('/agents/:id/notes', async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const b = req.body || {};
+      if (!b.body || !String(b.body).trim()) return res.status(400).json({ error: 'body obrigatório' });
+      const kind = ['call','email','meeting','proposal','note'].includes(b.kind) ? b.kind : 'note';
+      const { rows } = await pool.query(`
+        INSERT INTO agent_notes (agent_id, kind, body, entry_date)
+        VALUES ($1,$2,$3,COALESCE($4::date, CURRENT_DATE)) RETURNING *;`,
+        [id, kind, String(b.body).trim(), b.entry_date||null]);
+      res.json({ note: rows[0] });
+    } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+  });
+
+  // ---- NOTAS: apagar ----
+  app.delete('/agents/:id/notes/:noteId', async (req, res) => {
+    try {
+      await pool.query(`DELETE FROM agent_notes WHERE id=$1 AND agent_id=$2;`,
+        [parseInt(req.params.noteId,10), parseInt(req.params.id,10)]);
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+  });
+
+  // ---- JOGADORES-NA-APP: associar / desassociar ----
+  app.post('/agents/:id/players', async (req, res) => {
+    try {
+      const id = parseInt(req.params.id, 10);
+      const b = req.body || {};
+      if (!b.player_name) return res.status(400).json({ error: 'player_name obrigatório' });
+      const { rows } = await pool.query(`
+        INSERT INTO agent_players (agent_id, player_name, player_league)
+        VALUES ($1,$2,$3) ON CONFLICT (agent_id, player_name, player_league) DO NOTHING RETURNING *;`,
+        [id, b.player_name, b.player_league||null]);
+      res.json({ player: rows[0] || null });
+    } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+  });
+
+  app.delete('/agents/:id/players/:linkId', async (req, res) => {
+    try {
+      await pool.query(`DELETE FROM agent_players WHERE id=$1 AND agent_id=$2;`,
+        [parseInt(req.params.linkId,10), parseInt(req.params.id,10)]);
+      res.json({ ok: true });
+    } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+  });
+
 app.listen(PORT, () => console.log(`ProScout API running on port ${PORT}`));
