@@ -470,13 +470,35 @@ app.get('/fix/cf-takeover', async (req, res) => {
       // colunas acrescentadas (nao-destrutivo — preserva agentes existentes)
       for (const col of [
         "agent_name TEXT", "nationality TEXT", "birthdate DATE",
-        "phone2 TEXT", "whatsapp2 TEXT", "lang1 TEXT", "lang2 TEXT", "lang3 TEXT"
+        "phone2 TEXT", "whatsapp2 TEXT", "lang1 TEXT", "lang2 TEXT", "lang3 TEXT",
+        "email2 TEXT", "company_info TEXT", "postal_code TEXT"
       ]) { await pool.query('ALTER TABLE agents ADD COLUMN IF NOT EXISTS '+col+';'); }
       // posicao do jogador associado (para agrupar por posicao na ficha)
       await pool.query('ALTER TABLE agent_players ADD COLUMN IF NOT EXISTS player_pos TEXT;');
+      // comissões por jogador associado + pagamentos parcelados
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS agent_commissions (
+          id           SERIAL PRIMARY KEY,
+          agent_player_id INTEGER NOT NULL REFERENCES agent_players(id) ON DELETE CASCADE,
+          total_val    BIGINT DEFAULT 0,
+          n_payments   INTEGER DEFAULT 0,
+          created_at   TIMESTAMPTZ DEFAULT now(),
+          UNIQUE(agent_player_id)
+        );`);
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS agent_payments (
+          id            SERIAL PRIMARY KEY,
+          commission_id INTEGER NOT NULL REFERENCES agent_commissions(id) ON DELETE CASCADE,
+          seq           INTEGER,
+          amount        BIGINT DEFAULT 0,
+          due_date      DATE,
+          paid          BOOLEAN DEFAULT false,
+          created_at    TIMESTAMPTZ DEFAULT now()
+        );`);
+      await pool.query('CREATE INDEX IF NOT EXISTS idx_payments_comm ON agent_payments(commission_id);');
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_notes_agent   ON agent_notes(agent_id);`);
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_players_agent ON agent_players(agent_id);`);
-      res.json({ ok: true, tables: ['agents', 'agent_players', 'agent_notes'] });
+      res.json({ ok: true, tables: ['agents', 'agent_players', 'agent_notes', 'agent_commissions', 'agent_payments'] });
     } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
   });
 
@@ -502,7 +524,16 @@ app.get('/fix/cf-takeover', async (req, res) => {
       if (!a.rows.length) return res.status(404).json({ error: 'not found' });
       const players = await pool.query(`SELECT * FROM agent_players WHERE agent_id=$1 ORDER BY player_name;`, [id]);
       const notes   = await pool.query(`SELECT * FROM agent_notes WHERE agent_id=$1 ORDER BY entry_date DESC, id DESC;`, [id]);
-      res.json({ agent: a.rows[0], players: players.rows, notes: notes.rows });
+      // comissões + pagamentos por jogador associado
+      const comm = await pool.query(`
+        SELECT c.*, p.player_name FROM agent_commissions c
+        JOIN agent_players p ON p.id=c.agent_player_id WHERE p.agent_id=$1;`, [id]);
+      const pays = await pool.query(`
+        SELECT pay.* FROM agent_payments pay
+        JOIN agent_commissions c ON c.id=pay.commission_id
+        JOIN agent_players p ON p.id=c.agent_player_id
+        WHERE p.agent_id=$1 ORDER BY pay.seq;`, [id]);
+      res.json({ agent: a.rows[0], players: players.rows, notes: notes.rows, commissions: comm.rows, payments: pays.rows });
     } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
   });
 
@@ -513,13 +544,15 @@ app.get('/fix/cf-takeover', async (req, res) => {
       if (!b.company || !String(b.company).trim()) return res.status(400).json({ error: 'company obrigatório' });
       const { rows } = await pool.query(`
         INSERT INTO agents (company, agent_name, website, photo_url, rating, nationality, birthdate,
-          email, phone, phone2, whatsapp, whatsapp2, languages, lang1, lang2, lang3, num_players, portfolio_val, status, notes_ctx)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *;`,
+          email, email2, phone, phone2, whatsapp, whatsapp2, languages, lang1, lang2, lang3,
+          company_info, postal_code, num_players, portfolio_val, status, notes_ctx)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23) RETURNING *;`,
         [String(b.company).trim(), b.agent_name||null, b.website||null, b.photo_url||null, Math.max(0,Math.min(5,parseInt(b.rating,10)||0)),
          b.nationality||null, b.birthdate||null,
-         b.email||null, b.phone||null, b.phone2||null, b.whatsapp||null, b.whatsapp2||null,
+         b.email||null, b.email2||null, b.phone||null, b.phone2||null, b.whatsapp||null, b.whatsapp2||null,
          b.languages||null, b.lang1||null, b.lang2||null, b.lang3||null,
-         parseInt(b.num_players,10)||0, parseInt(b.portfolio_val,10)||0, b.status||'cold', b.notes_ctx||null]);
+         b.company_info||null, b.postal_code||null,
+         parseInt(b.num_players,10)||0, parseInt(b.portfolio_val,10)||0, b.status||'active', b.notes_ctx||null]);
       res.json({ agent: rows[0] });
     } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
   });
@@ -529,7 +562,7 @@ app.get('/fix/cf-takeover', async (req, res) => {
     try {
       const id = parseInt(req.params.id, 10);
       const b = req.body || {};
-      const allowed = ['company','agent_name','website','photo_url','rating','nationality','birthdate','email','phone','phone2','whatsapp','whatsapp2','languages','lang1','lang2','lang3','num_players','portfolio_val','status','notes_ctx'];
+      const allowed = ['company','agent_name','website','photo_url','rating','nationality','birthdate','email','email2','phone','phone2','whatsapp','whatsapp2','languages','lang1','lang2','lang3','company_info','postal_code','num_players','portfolio_val','status','notes_ctx'];
       const sets = [], vals = []; let i = 1;
       for (const k of allowed) if (k in b) {
         let v = b[k];
@@ -601,5 +634,45 @@ app.get('/fix/cf-takeover', async (req, res) => {
     } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
   });
 
-app.listen(PORT, () => console.log(`ProScout API running on port ${PORT}`));
 
+  // ---- COMISSÕES: criar/atualizar para um jogador associado, com N pagamentos ----
+  app.post('/agents/players/:linkId/commission', async (req, res) => {
+    try {
+      const linkId = parseInt(req.params.linkId, 10);
+      const b = req.body || {};
+      const total = parseInt(b.total_val,10)||0;
+      const n = parseInt(b.n_payments,10)||0;
+      // upsert da comissão
+      const c = await pool.query(`
+        INSERT INTO agent_commissions (agent_player_id, total_val, n_payments)
+        VALUES ($1,$2,$3)
+        ON CONFLICT (agent_player_id) DO UPDATE SET total_val=$2, n_payments=$3
+        RETURNING *;`, [linkId, total, n]);
+      const commId = c.rows[0].id;
+      // substituir pagamentos: apagar e recriar a partir do array recebido
+      await pool.query(`DELETE FROM agent_payments WHERE commission_id=$1;`, [commId]);
+      const pays = Array.isArray(b.payments) ? b.payments : [];
+      for (let i=0;i<pays.length;i++){
+        const pmt = pays[i]||{};
+        await pool.query(`
+          INSERT INTO agent_payments (commission_id, seq, amount, due_date, paid)
+          VALUES ($1,$2,$3,$4,$5);`,
+          [commId, i+1, parseInt(pmt.amount,10)||0, pmt.due_date||null, !!pmt.paid]);
+      }
+      const out = await pool.query(`SELECT * FROM agent_payments WHERE commission_id=$1 ORDER BY seq;`, [commId]);
+      res.json({ commission: c.rows[0], payments: out.rows });
+    } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+  });
+
+  // ---- PAGAMENTO: marcar pago / não pago ----
+  app.put('/agents/payments/:payId', async (req, res) => {
+    try {
+      const payId = parseInt(req.params.payId, 10);
+      const b = req.body || {};
+      const { rows } = await pool.query(`UPDATE agent_payments SET paid=$1 WHERE id=$2 RETURNING *;`, [!!b.paid, payId]);
+      if (!rows.length) return res.status(404).json({ error: 'not found' });
+      res.json({ payment: rows[0] });
+    } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
+  });
+
+app.listen(PORT, () => console.log(`ProScout API running on port ${PORT}`));
