@@ -524,15 +524,22 @@ app.get('/fix/cf-takeover', async (req, res) => {
       if (!a.rows.length) return res.status(404).json({ error: 'not found' });
       const players = await pool.query(`SELECT * FROM agent_players WHERE agent_id=$1 ORDER BY player_name;`, [id]);
       const notes   = await pool.query(`SELECT * FROM agent_notes WHERE agent_id=$1 ORDER BY entry_date DESC, id DESC;`, [id]);
-      // comissões + pagamentos por jogador associado
-      const comm = await pool.query(`
-        SELECT c.*, p.player_name FROM agent_commissions c
-        JOIN agent_players p ON p.id=c.agent_player_id WHERE p.agent_id=$1;`, [id]);
-      const pays = await pool.query(`
-        SELECT pay.* FROM agent_payments pay
-        JOIN agent_commissions c ON c.id=pay.commission_id
-        JOIN agent_players p ON p.id=c.agent_player_id
-        WHERE p.agent_id=$1 ORDER BY pay.seq;`, [id]);
+      // comissões + pagamentos por jogador associado (tolerante: cria tabelas se faltarem)
+      let comm = { rows: [] }, pays = { rows: [] };
+      try {
+        comm = await pool.query(`
+          SELECT c.*, p.player_name FROM agent_commissions c
+          JOIN agent_players p ON p.id=c.agent_player_id WHERE p.agent_id=$1;`, [id]);
+        pays = await pool.query(`
+          SELECT pay.* FROM agent_payments pay
+          JOIN agent_commissions c ON c.id=pay.commission_id
+          JOIN agent_players p ON p.id=c.agent_player_id
+          WHERE p.agent_id=$1 ORDER BY pay.seq;`, [id]);
+      } catch (err) {
+        // tabelas ainda não criadas — criar agora e devolver vazio (não rebenta a ficha)
+        await pool.query(`CREATE TABLE IF NOT EXISTS agent_commissions (id SERIAL PRIMARY KEY, agent_player_id INTEGER NOT NULL REFERENCES agent_players(id) ON DELETE CASCADE, total_val BIGINT DEFAULT 0, n_payments INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT now(), UNIQUE(agent_player_id));`);
+        await pool.query(`CREATE TABLE IF NOT EXISTS agent_payments (id SERIAL PRIMARY KEY, commission_id INTEGER NOT NULL REFERENCES agent_commissions(id) ON DELETE CASCADE, seq INTEGER, amount BIGINT DEFAULT 0, due_date DATE, paid BOOLEAN DEFAULT false, created_at TIMESTAMPTZ DEFAULT now());`);
+      }
       res.json({ agent: a.rows[0], players: players.rows, notes: notes.rows, commissions: comm.rows, payments: pays.rows });
     } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
   });
@@ -642,6 +649,9 @@ app.get('/fix/cf-takeover', async (req, res) => {
       const b = req.body || {};
       const total = parseInt(b.total_val,10)||0;
       const n = parseInt(b.n_payments,10)||0;
+      // garantir tabelas (idempotente)
+      await pool.query(`CREATE TABLE IF NOT EXISTS agent_commissions (id SERIAL PRIMARY KEY, agent_player_id INTEGER NOT NULL REFERENCES agent_players(id) ON DELETE CASCADE, total_val BIGINT DEFAULT 0, n_payments INTEGER DEFAULT 0, created_at TIMESTAMPTZ DEFAULT now(), UNIQUE(agent_player_id));`);
+      await pool.query(`CREATE TABLE IF NOT EXISTS agent_payments (id SERIAL PRIMARY KEY, commission_id INTEGER NOT NULL REFERENCES agent_commissions(id) ON DELETE CASCADE, seq INTEGER, amount BIGINT DEFAULT 0, due_date DATE, paid BOOLEAN DEFAULT false, created_at TIMESTAMPTZ DEFAULT now());`);
       // upsert da comissão
       const c = await pool.query(`
         INSERT INTO agent_commissions (agent_player_id, total_val, n_payments)
