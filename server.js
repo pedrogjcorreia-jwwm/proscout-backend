@@ -4,7 +4,7 @@ const cors    = require('cors');
 const { Pool } = require('pg');
 
 const app = express();
-app.use(cors({ origin: '*', methods: ['GET','POST','OPTIONS'], allowedHeaders: ['Content-Type'] }));
+app.use(cors({ origin: '*', methods: ['GET','POST','PUT','DELETE','OPTIONS'], allowedHeaders: ['Content-Type'] }));
 app.options('*', cors());
 app.use(express.json({ limit: '50mb' }));
 
@@ -467,6 +467,13 @@ app.get('/fix/cf-takeover', async (req, res) => {
           entry_date DATE DEFAULT CURRENT_DATE,
           created_at TIMESTAMPTZ DEFAULT now()
         );`);
+      // colunas acrescentadas (nao-destrutivo — preserva agentes existentes)
+      for (const col of [
+        "agent_name TEXT", "nationality TEXT", "birthdate DATE",
+        "phone2 TEXT", "whatsapp2 TEXT", "lang1 TEXT", "lang2 TEXT", "lang3 TEXT"
+      ]) { await pool.query('ALTER TABLE agents ADD COLUMN IF NOT EXISTS '+col+';'); }
+      // posicao do jogador associado (para agrupar por posicao na ficha)
+      await pool.query('ALTER TABLE agent_players ADD COLUMN IF NOT EXISTS player_pos TEXT;');
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_notes_agent   ON agent_notes(agent_id);`);
       await pool.query(`CREATE INDEX IF NOT EXISTS idx_agent_players_agent ON agent_players(agent_id);`);
       res.json({ ok: true, tables: ['agents', 'agent_players', 'agent_notes'] });
@@ -505,10 +512,13 @@ app.get('/fix/cf-takeover', async (req, res) => {
       const b = req.body || {};
       if (!b.company || !String(b.company).trim()) return res.status(400).json({ error: 'company obrigatório' });
       const { rows } = await pool.query(`
-        INSERT INTO agents (company, website, photo_url, rating, email, phone, whatsapp, languages, num_players, portfolio_val, status, notes_ctx)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *;`,
-        [String(b.company).trim(), b.website||null, b.photo_url||null, Math.max(0,Math.min(5,parseInt(b.rating,10)||0)),
-         b.email||null, b.phone||null, b.whatsapp||null, b.languages||null,
+        INSERT INTO agents (company, agent_name, website, photo_url, rating, nationality, birthdate,
+          email, phone, phone2, whatsapp, whatsapp2, languages, lang1, lang2, lang3, num_players, portfolio_val, status, notes_ctx)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20) RETURNING *;`,
+        [String(b.company).trim(), b.agent_name||null, b.website||null, b.photo_url||null, Math.max(0,Math.min(5,parseInt(b.rating,10)||0)),
+         b.nationality||null, b.birthdate||null,
+         b.email||null, b.phone||null, b.phone2||null, b.whatsapp||null, b.whatsapp2||null,
+         b.languages||null, b.lang1||null, b.lang2||null, b.lang3||null,
          parseInt(b.num_players,10)||0, parseInt(b.portfolio_val,10)||0, b.status||'cold', b.notes_ctx||null]);
       res.json({ agent: rows[0] });
     } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
@@ -519,7 +529,7 @@ app.get('/fix/cf-takeover', async (req, res) => {
     try {
       const id = parseInt(req.params.id, 10);
       const b = req.body || {};
-      const allowed = ['company','website','photo_url','rating','email','phone','whatsapp','languages','num_players','portfolio_val','status','notes_ctx'];
+      const allowed = ['company','agent_name','website','photo_url','rating','nationality','birthdate','email','phone','phone2','whatsapp','whatsapp2','languages','lang1','lang2','lang3','num_players','portfolio_val','status','notes_ctx'];
       const sets = [], vals = []; let i = 1;
       for (const k of allowed) if (k in b) {
         let v = b[k];
@@ -576,9 +586,9 @@ app.get('/fix/cf-takeover', async (req, res) => {
       const b = req.body || {};
       if (!b.player_name) return res.status(400).json({ error: 'player_name obrigatório' });
       const { rows } = await pool.query(`
-        INSERT INTO agent_players (agent_id, player_name, player_league)
-        VALUES ($1,$2,$3) ON CONFLICT (agent_id, player_name, player_league) DO NOTHING RETURNING *;`,
-        [id, b.player_name, b.player_league||null]);
+        INSERT INTO agent_players (agent_id, player_name, player_league, player_pos)
+        VALUES ($1,$2,$3,$4) ON CONFLICT (agent_id, player_name, player_league) DO NOTHING RETURNING *;`,
+        [id, b.player_name, b.player_league||null, b.player_pos||null]);
       res.json({ player: rows[0] || null });
     } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
   });
@@ -592,3 +602,4 @@ app.get('/fix/cf-takeover', async (req, res) => {
   });
 
 app.listen(PORT, () => console.log(`ProScout API running on port ${PORT}`));
+
