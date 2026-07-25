@@ -601,7 +601,7 @@ app.get('/fix/cf-takeover', async (req, res) => {
       const id = parseInt(req.params.id, 10);
       const b = req.body || {};
       if (!b.body || !String(b.body).trim()) return res.status(400).json({ error: 'body obrigatório' });
-      const kind = ['call','email','meeting','proposal','note'].includes(b.kind) ? b.kind : 'note';
+      const kind = ['call','whatsapp','email','meeting','proposal','note'].includes(b.kind) ? b.kind : 'note';
       const { rows } = await pool.query(`
         INSERT INTO agent_notes (agent_id, kind, body, entry_date)
         VALUES ($1,$2,$3,COALESCE($4::date, CURRENT_DATE)) RETURNING *;`,
