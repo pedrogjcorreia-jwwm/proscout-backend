@@ -594,7 +594,20 @@ app.get('/fix/cf-takeover', async (req, res) => {
       if (!sets.length) return res.status(400).json({ error: 'nada para atualizar' });
       sets.push(`updated_at=now()`);
       vals.push(id);
-      const { rows } = await pool.query(`UPDATE agents SET ${sets.join(', ')} WHERE id=$${i} RETURNING *;`, vals);
+      const sql = `UPDATE agents SET ${sets.join(', ')} WHERE id=$${i} RETURNING *;`;
+      let rows;
+      try {
+        rows = (await pool.query(sql, vals)).rows;
+      } catch (errUpd) {
+        // coluna em falta — criar as colunas novas (idempotente) e repetir
+        for (const col of [
+          "agent_name TEXT","nationality TEXT","birthdate DATE","phone2 TEXT","whatsapp2 TEXT",
+          "lang1 TEXT","lang2 TEXT","lang3 TEXT","email2 TEXT","company_info TEXT","postal_code TEXT",
+          "fifa_agent BOOLEAN DEFAULT false","role_label TEXT","curiosities TEXT",
+          "annual_commission BIGINT DEFAULT 0","slogan TEXT","updated_at TIMESTAMPTZ DEFAULT now()"
+        ]) { try { await pool.query('ALTER TABLE agents ADD COLUMN IF NOT EXISTS '+col+';'); } catch(e2){} }
+        rows = (await pool.query(sql, vals)).rows;
+      }
       if (!rows.length) return res.status(404).json({ error: 'not found' });
       res.json({ agent: rows[0] });
     } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
@@ -686,9 +699,20 @@ app.get('/fix/cf-takeover', async (req, res) => {
           [total, n, b.comm_type||null, parseInt(b.commission_id,10), linkId]);
         if (!c.rows.length) return res.status(404).json({ error: 'commission not found' });
       } else {
-        // criar nova comissão
-        c = await pool.query(`INSERT INTO agent_commissions (agent_player_id, total_val, n_payments, comm_type) VALUES ($1,$2,$3,$4) RETURNING *;`,
-          [linkId, total, n, b.comm_type||null]);
+        // criar nova comissão (resiliente: se houver UNIQUE antiga em agent_player_id, remove-a e repete)
+        try {
+          c = await pool.query(`INSERT INTO agent_commissions (agent_player_id, total_val, n_payments, comm_type) VALUES ($1,$2,$3,$4) RETURNING *;`,
+            [linkId, total, n, b.comm_type||null]);
+        } catch (errIns) {
+          // remover qualquer restrição UNIQUE sobre agent_player_id (nome pode variar)
+          await pool.query(`DO $$ DECLARE r record; BEGIN
+            FOR r IN (SELECT conname FROM pg_constraint WHERE conrelid='agent_commissions'::regclass AND contype='u') LOOP
+              EXECUTE 'ALTER TABLE agent_commissions DROP CONSTRAINT ' || quote_ident(r.conname);
+            END LOOP;
+          END $$;`);
+          c = await pool.query(`INSERT INTO agent_commissions (agent_player_id, total_val, n_payments, comm_type) VALUES ($1,$2,$3,$4) RETURNING *;`,
+            [linkId, total, n, b.comm_type||null]);
+        }
       }
       const commId = c.rows[0].id;
       // substituir pagamentos: apagar e recriar a partir do array recebido
