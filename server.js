@@ -629,6 +629,9 @@ app.get('/fix/cf-takeover', async (req, res) => {
       const b = req.body || {};
       if (!b.body || !String(b.body).trim()) return res.status(400).json({ error: 'body obrigatório' });
       const kind = ['call','whatsapp','email','meeting','proposal','note'].includes(b.kind) ? b.kind : 'note';
+      // garantir tabela + coluna note_status (resiliente a setup não corrido)
+      await pool.query(`CREATE TABLE IF NOT EXISTS agent_notes (id SERIAL PRIMARY KEY, agent_id INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE, kind TEXT, body TEXT, entry_date DATE DEFAULT CURRENT_DATE, note_status TEXT DEFAULT 'done', created_at TIMESTAMPTZ DEFAULT now());`);
+      await pool.query("ALTER TABLE agent_notes ADD COLUMN IF NOT EXISTS note_status TEXT DEFAULT 'done';");
       const { rows } = await pool.query(`
         INSERT INTO agent_notes (agent_id, kind, body, entry_date, note_status)
         VALUES ($1,$2,$3,COALESCE($4::date, CURRENT_DATE),$5) RETURNING *;`,
@@ -642,6 +645,7 @@ app.get('/fix/cf-takeover', async (req, res) => {
     try {
       const b = req.body || {};
       const st = (b.note_status==='pending') ? 'pending' : 'done';
+      await pool.query("ALTER TABLE agent_notes ADD COLUMN IF NOT EXISTS note_status TEXT DEFAULT 'done';");
       const { rows } = await pool.query(`UPDATE agent_notes SET note_status=$1 WHERE id=$2 AND agent_id=$3 RETURNING *;`,
         [st, parseInt(req.params.noteId,10), parseInt(req.params.id,10)]);
       if (!rows.length) return res.status(404).json({ error: 'not found' });
