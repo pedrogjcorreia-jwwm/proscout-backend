@@ -754,4 +754,231 @@ app.get('/fix/cf-takeover', async (req, res) => {
     } catch (e) { res.status(500).json({ error: String(e.message || e) }); }
   });
 
+
+// ═══ CARTÃO PDF (inline) ═══════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════
+// card_pdf.js — gera o PDF do cartão do agente (design Thrivella v2) com links
+// clicáveis (Email mailto, Telefone→WhatsApp wa.me, Transfermarkt).
+//
+// Uso no server.js:
+//   const { registerCardPdfRoute } = require('./card_pdf');
+//   registerCardPdfRoute(app, pool);
+//
+// Requer:  npm i puppeteer
+// (No Railway: o puppeteer descarrega o Chromium no build. Se falhar, ver o
+//  fallback @sparticuz/chromium comentado no fim deste ficheiro.)
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Carregamento resiliente do motor de render:
+// 1) tenta @sparticuz/chromium + puppeteer-core (ideal para Railway/serverless)
+// 2) cai para o puppeteer normal (que traz o seu próprio Chromium)
+let puppeteer = null, sparticuz = null, engine = 'none';
+try {
+  sparticuz = require('@sparticuz/chromium');
+  puppeteer = require('puppeteer-core');
+  engine = 'sparticuz';
+} catch (e1) {
+  try { puppeteer = require('puppeteer'); engine = 'puppeteer'; }
+  catch (e2) { /* nenhum instalado — a rota devolverá erro explicativo */ }
+}
+
+function esc(t){ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+function money(v){
+  v = parseInt(v,10)||0;
+  if (v>=1e9) return '€'+(v/1e9).toFixed(v%1e9?1:0)+'B';
+  if (v>=1e6) return '€'+(v/1e6).toFixed(v%1e6?1:0)+'M';
+  if (v>=1e3) return '€'+Math.round(v/1e3)+'k';
+  return '€'+v;
+}
+
+// nome do país por extenso + código ISO (2 letras minúsculas) para a bandeira
+const COUNTRY = {
+  PT:['Portugal','pt'], ES:['Espanha','es'], FR:['França','fr'], GB:['Reino Unido','gb'],
+  IT:['Itália','it'], DE:['Alemanha','de'], NL:['Holanda','nl'], BE:['Bélgica','be'],
+  BR:['Brasil','br'], AR:['Argentina','ar'], US:['EUA','us'], CH:['Suíça','ch'],
+  AT:['Áustria','at'], DK:['Dinamarca','dk'], SE:['Suécia','se'], NO:['Noruega','no'],
+  PL:['Polónia','pl'], HR:['Croácia','hr'], RS:['Sérvia','rs'], GR:['Grécia','gr'],
+  TR:['Turquia','tr'], MA:['Marrocos','ma'], SN:['Senegal','sn'], NG:['Nigéria','ng'],
+  CI:['Costa do Marfim','ci'], GH:['Gana','gh'], JP:['Japão','jp'], KR:['Coreia do Sul','kr'],
+  MX:['México','mx'], CO:['Colômbia','co'], UY:['Uruguai','uy'], CL:['Chile','cl'],
+};
+
+function buildHtml(a){
+  const name = a.agent_name || a.company || 'Agente';
+  const org  = a.company || '';
+  const active = (a.status !== 'inactive');
+  const status = active ? 'Agente Ativo' : 'Agente Inativo';
+  const dotCol = active ? '#43e5b0' : '#ff6b6b';
+  const serial = 'THV · ' + (new Date().getFullYear());
+  const players = (a.num_players||0);
+  const mv = money(a.portfolio_val);
+  const fifa = !!a.fifa_agent;
+
+  // país
+  const natCode = (a.nationality||'').toUpperCase();
+  const cinfo = COUNTRY[natCode] || null;
+  const countryName = cinfo ? cinfo[0] : (a.nationality || '');
+  const countryIso  = cinfo ? cinfo[1] : (natCode ? natCode.toLowerCase() : '');
+  const langs = [a.lang1,a.lang2,a.lang3].filter(Boolean).join(' · ');
+
+  // avatar
+  let avatar;
+  if (a.photo_url) {
+    avatar = '<img src="'+a.photo_url+'" alt="'+esc(name)+'">';
+  } else {
+    const ini = name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
+    avatar = '<span class="mono">'+esc(ini)+'</span>';
+  }
+  const seal = fifa ? '<div class="seal"><svg viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg></div>' : '';
+
+  // contactos
+  const emailHtml = a.email
+    ? '<a href="mailto:'+esc(a.email)+'"><svg class="ico" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg><span class="lbl">Email</span><span class="val">Contactar ›</span></a>'
+    : '';
+  const wa = String(a.whatsapp||a.phone||'').replace(/[^0-9]/g,'');
+  const phoneHtml = wa
+    ? '<a href="https://wa.me/'+wa+'"><svg class="ico wa" viewBox="0 0 24 24"><path d="M12 2a10 10 0 0 0-8.6 15l-1.3 4.7 4.8-1.3A10 10 0 1 0 12 2zm0 18a8 8 0 0 1-4.1-1.1l-.3-.2-2.8.8.7-2.7-.2-.3A8 8 0 1 1 12 20zm4.4-5.9c-.2-.1-1.4-.7-1.6-.8s-.4-.1-.5.1-.6.8-.7 1-.3.2-.5.1a6.5 6.5 0 0 1-1.9-1.2 7.3 7.3 0 0 1-1.4-1.7c-.1-.2 0-.4.1-.5l.4-.4.2-.4v-.4l-.8-1.8c-.2-.5-.4-.4-.5-.4h-.5a1 1 0 0 0-.7.3A2.8 2.8 0 0 0 6.5 9a5 5 0 0 0 1 2.6 11.4 11.4 0 0 0 4.4 3.9c.6.3 1.1.4 1.5.5a3.5 3.5 0 0 0 1.6.1c.5-.1 1.4-.6 1.6-1.1a2 2 0 0 0 .1-1.1c0-.1-.2-.2-.4-.3z"/></svg><span class="lbl">WhatsApp</span><span class="val">Mensagem ›</span></a>'
+    : '';
+  const tmHtml = a.website
+    ? '<a href="'+esc(a.website)+'"><svg class="ico" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg><span class="lbl">Transfermarkt</span><span class="val">Ver perfil ›</span></a>'
+    : '';
+
+  const tileFifa = fifa
+    ? '<div class="tile compact" style="--c:#4da0ff"><div class="glow"></div><span class="badge"><svg viewBox="0 0 24 24"><polygon points="12,0.8 14.25,3.6 17.6,2.3 18.15,5.85 21.7,6.4 20.4,9.75 23.2,12 20.4,14.25 21.7,17.6 18.15,18.15 17.6,21.7 14.25,20.4 12,23.2 9.75,20.4 6.4,21.7 5.85,18.15 2.3,17.6 3.6,14.25 0.8,12 3.6,9.75 2.3,6.4 5.85,5.85 6.4,2.3 9.75,3.6" fill="#3897f0"/><path d="M8.2 12.3 l2.6 2.6 l5.0 -5.4" fill="none" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div class="ctext"><div class="v">Agente FIFA</div><div class="s">Licenciado</div></div></div>'
+    : '<div class="tile compact" style="--c:#4da0ff"><div class="glow"></div><div class="ctext"><div class="v">Agente</div><div class="s">de Jogadores</div></div></div>';
+
+  const flagImg = countryIso ? '<span class="flag"><img src="https://flagcdn.com/60x40/'+countryIso+'.png" alt=""></span>' : '';
+  const tileCountry = '<div class="tile compact" style="--c:#4da0ff"><div class="glow"></div>'+flagImg+'<div class="ctext"><div class="v">'+esc(countryName||'—')+'</div>'+(langs?'<div class="s">'+esc(langs)+'</div>':'<div class="s">País</div>')+'</div></div>';
+
+  return `<!DOCTYPE html><html lang="pt"><head><meta charset="UTF-8"><style>
+  @page{size:460px 760px;margin:0}
+  :root{--deep:#060d1e;--line:rgba(120,170,255,.14);--line-strong:rgba(120,170,255,.30);--ink:#eef4ff;--muted:#8aa0c6;--muted-2:#61759b;--blue:#4da0ff;--blue-bright:#7bbcff;--mint:#43e5b0;--fx-display:'Segoe UI',system-ui,sans-serif;--fx-body:'Segoe UI',system-ui,sans-serif}
+  *{box-sizing:border-box;margin:0;padding:0}
+  html,body{width:460px;height:760px}
+  body{font-family:var(--fx-body);background:radial-gradient(120% 90% at 50% -10%,#0a1836 0%,#060d1e 46%,#03060f 100%);color:var(--ink);display:flex;align-items:center;justify-content:center;-webkit-font-smoothing:antialiased}
+  .card{position:relative;width:420px;border-radius:28px;padding:34px 26px 22px;background:linear-gradient(180deg,rgba(20,38,74,.72),rgba(7,15,32,.86));border:1px solid var(--line-strong);box-shadow:0 1px 0 rgba(160,200,255,.14) inset,0 30px 70px -30px rgba(0,10,40,.9);overflow:hidden}
+  .holo{position:absolute;top:0;left:0;right:0;height:140px;z-index:0;pointer-events:none;opacity:.45;-webkit-mask:linear-gradient(180deg,#000 0%,transparent 100%);background:repeating-linear-gradient(58deg,rgba(120,180,255,.10) 0 1px,transparent 1px 7px),repeating-linear-gradient(-58deg,rgba(90,150,255,.08) 0 1px,transparent 1px 7px)}
+  .content{position:relative;z-index:2}
+  .eyebrow{display:flex;align-items:center;justify-content:space-between;font-family:var(--fx-display);font-size:9px;letter-spacing:.28em;text-transform:uppercase;color:var(--muted-2);margin-bottom:18px}
+  .eyebrow .dot{width:6px;height:6px;border-radius:50%;background:${dotCol};box-shadow:0 0 10px ${dotCol};display:inline-block;margin-right:7px;vertical-align:middle}
+  .avatar-wrap{display:flex;justify-content:center;margin-bottom:18px}
+  .avatar{position:relative;width:120px;height:120px;border-radius:50%;display:grid;place-items:center;background:radial-gradient(circle at 35% 28%,#17335f,#081327 72%);box-shadow:0 0 0 1px rgba(120,180,255,.35),0 0 30px rgba(70,140,255,.45),inset 0 2px 14px rgba(0,0,0,.6)}
+  .avatar .ring{position:absolute;inset:-4px;border-radius:50%;padding:2px;background:conic-gradient(from 90deg,#4da0ff,#12e0ff,#7a3bff,#4da0ff);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:.9}
+  .avatar .mono{font-family:var(--fx-display);font-weight:700;font-size:42px;background:linear-gradient(180deg,#eaf3ff,#8fb6ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .avatar img{width:100%;height:100%;border-radius:50%;object-fit:cover;position:relative;z-index:1}
+  .seal{position:absolute;right:2px;bottom:4px;width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:linear-gradient(150deg,#2f8bff,#1b5fd6);box-shadow:0 4px 14px rgba(20,80,200,.6),0 0 0 3px var(--deep);z-index:2}
+  .seal svg{width:15px;height:15px;stroke:#fff;stroke-width:3;fill:none}
+  .name{font-family:var(--fx-display);font-weight:700;font-size:34px;line-height:1;text-align:center;letter-spacing:-.015em;background:linear-gradient(180deg,#fff,#c7dcff);-webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:10px}
+  .org{text-align:center;font-family:var(--fx-display);font-weight:600;font-size:13px;letter-spacing:.34em;text-transform:uppercase;color:var(--blue-bright);margin-bottom:20px}
+  .contact{display:grid;grid-template-columns:1fr 1fr 1fr;border:1px solid var(--line);border-radius:16px;overflow:hidden;background:linear-gradient(180deg,rgba(18,34,66,.5),rgba(9,18,38,.5));margin-bottom:14px}
+  .contact a{text-decoration:none;color:inherit;padding:13px 8px;text-align:center;display:flex;flex-direction:column;align-items:center;gap:6px;position:relative}
+  .contact a+a::before{content:"";position:absolute;left:0;top:22%;bottom:22%;width:1px;background:var(--line)}
+  .contact .ico{width:20px;height:20px;stroke:var(--blue);stroke-width:1.6;fill:none}
+  .contact .ico.wa{stroke:var(--mint)}
+  .contact .lbl{font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted-2)}
+  .contact .val{font-size:11px;font-weight:600;color:var(--blue-bright)}
+  .stats{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-bottom:20px}
+  .tile{position:relative;border-radius:18px;padding:16px 15px 14px;overflow:hidden;border:1px solid var(--line);background:linear-gradient(180deg,rgba(20,38,74,.55),rgba(9,18,38,.55))}
+  .tile .glow{position:absolute;inset:0;opacity:.5;background:radial-gradient(120px 80px at 82% -10%,var(--c,#4da0ff)44,transparent 70%)}
+  .tile .k{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted-2);display:flex;align-items:center;gap:6px;margin-bottom:7px;position:relative}
+  .tile .k svg{width:13px;height:13px;stroke:var(--c,#4da0ff);stroke-width:1.8;fill:none}
+  .tile .v{font-family:var(--fx-display);font-weight:700;font-size:30px;line-height:1;color:var(--c,#4da0ff);position:relative}
+  .tile .s{font-size:11px;color:var(--muted);margin-top:4px;position:relative}
+  .tile.compact{display:flex;align-items:center;gap:12px;padding:13px 14px}
+  .tile.compact .badge{flex:none;width:32px;height:32px}
+  .tile.compact .badge svg{width:100%;height:100%}
+  .tile.compact .flag{flex:none;width:32px;height:22px;border-radius:5px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.5),0 0 0 1px rgba(255,255,255,.14)}
+  .tile.compact .flag img{display:block;width:100%;height:100%;object-fit:cover}
+  .tile.compact .ctext .v{font-family:var(--fx-display);font-size:15px;font-weight:600;color:var(--ink)}
+  .tile.compact .ctext .s{font-size:10px;color:var(--muted);margin-top:2px}
+  .foot{display:flex;flex-direction:column;align-items:center;gap:5px;padding-top:2px}
+  .rule{display:flex;align-items:center;gap:10px;width:100%}
+  .rule .ln{height:1px;flex:1;background:linear-gradient(90deg,transparent,var(--line-strong))}
+  .rule .ln.r{background:linear-gradient(90deg,var(--line-strong),transparent)}
+  .rule svg{width:13px;height:13px;fill:var(--blue)}
+  .wordmark{font-family:var(--fx-display);font-weight:600;font-size:24px;letter-spacing:-.01em;background:linear-gradient(120deg,#5aa6ff,#8fd0ff,#5aa6ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .powered{font-size:9px;letter-spacing:.2em;text-transform:uppercase;color:var(--muted-2)}
+  </style></head><body>
+  <div class="card"><div class="holo"></div><div class="content">
+    <div class="eyebrow"><span><span class="dot"></span>${esc(status)}</span><span>${esc(serial)}</span></div>
+    <div class="avatar-wrap"><div class="avatar"><div class="ring"></div>${avatar}${seal}</div></div>
+    <h1 class="name">${esc(name)}</h1>
+    <div class="org">${esc(org)}</div>
+    <nav class="contact">${emailHtml}${phoneHtml}${tmHtml}</nav>
+    <section class="stats">
+      <div class="tile" style="--c:#4da0ff"><div class="glow"></div><div class="k"><svg viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c0-3.3 2.5-5.5 5.5-5.5s5.5 2.2 5.5 5.5"/><path d="M16 6.5a3 3 0 0 1 0 5.5M18 20c0-2.4-1-4.2-2.6-5.2"/></svg>Jogadores</div><div class="v">${players}</div><div class="s">Sob gestão</div></div>
+      <div class="tile" style="--c:#43e5b0"><div class="glow"></div><div class="k"><svg viewBox="0 0 24 24"><path d="M4 18V6l8 6 8-6v12"/><path d="M4 20h16"/></svg>Valor de Mercado</div><div class="v">${esc(mv)}</div><div class="s">Carteira agregada</div></div>
+      ${tileFifa}${tileCountry}
+    </section>
+    <footer class="foot"><div class="rule"><span class="ln"></span><svg viewBox="0 0 24 24"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8z"/></svg><span class="wordmark">thrivella</span><svg viewBox="0 0 24 24"><path d="M12 2l1.8 6.2L20 10l-6.2 1.8L12 18l-1.8-6.2L4 10l6.2-1.8z"/></svg><span class="ln r"></span></div><div class="powered">Powered by Thrivella</div></footer>
+  </div></div></body></html>`;
+}
+
+async function renderPdf(html){
+  let launchOpts;
+  if (engine === 'sparticuz') {
+    launchOpts = {
+      args: [...sparticuz.args, '--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage'],
+      defaultViewport: sparticuz.defaultViewport,
+      executablePath: await sparticuz.executablePath(),
+      headless: 'new',
+    };
+  } else {
+    launchOpts = {
+      args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage'],
+      headless: 'new',
+    };
+  }
+  const browser = await puppeteer.launch(launchOpts);
+  try {
+    const page = await browser.newPage();
+    await page.setContent(html, { waitUntil: 'networkidle0' });
+    const pdf = await page.pdf({
+      width: '460px', height: '760px',
+      printBackground: true, preferCSSPageSize: true,
+    });
+    return pdf;
+  } finally {
+    await browser.close();
+  }
+}
+
+function registerCardPdfRoute(app, pool){
+  app.get('/agents/:id/card.pdf', async (req, res) => {
+    try {
+      if (!puppeteer) return res.status(500).json({ error: 'Motor de PDF indisponível. Instala no backend: "npm i @sparticuz/chromium puppeteer-core" (recomendado p/ Railway) OU "npm i puppeteer".' });
+      const id = parseInt(req.params.id, 10);
+      const r = await pool.query('SELECT * FROM agents WHERE id=$1;', [id]);
+      if (!r.rows.length) return res.status(404).json({ error: 'agente não encontrado' });
+      const a = r.rows[0];
+      const html = buildHtml(a);
+      const pdf = await renderPdf(html);
+      const safe = String(a.agent_name || a.company || 'agente').replace(/[^a-zA-Z0-9]+/g,'_');
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', 'inline; filename="Thrivella_'+safe+'.pdf"');
+      res.send(pdf);
+    } catch (e) {
+      console.error('card.pdf error:', e);
+      res.status(500).json({ error: String(e.message || e) });
+    }
+  });
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// FALLBACK Railway (se o puppeteer normal não arrancar o Chromium):
+//   npm i puppeteer-core @sparticuz/chromium
+// e trocar renderPdf por:
+//   const chromium = require('@sparticuz/chromium');
+//   const puppeteer = require('puppeteer-core');
+//   const browser = await puppeteer.launch({
+//     args: chromium.args, executablePath: await chromium.executablePath(),
+//     headless: 'new',
+//   });
+// ─────────────────────────────────────────────────────────────────────────
+
+// ═══ fim cartão PDF ════════════════════════════════════════════════════════
+
+registerCardPdfRoute(app, pool);
+
 app.listen(PORT, () => console.log(`ProScout API running on port ${PORT}`));
