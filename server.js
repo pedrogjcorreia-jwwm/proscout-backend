@@ -769,17 +769,29 @@ app.get('/fix/cf-takeover', async (req, res) => {
 //  fallback @sparticuz/chromium comentado no fim deste ficheiro.)
 // ═══════════════════════════════════════════════════════════════════════════
 
-// Carregamento resiliente do motor de render:
-// 1) tenta @sparticuz/chromium + puppeteer-core (ideal para Railway/serverless)
-// 2) cai para o puppeteer normal (que traz o seu próprio Chromium)
-let puppeteer = null, sparticuz = null, engine = 'none';
+// Carregamento do motor de render.
+// No Railway usamos o Chromium do SISTEMA (instalado via nixpacks.toml), que já
+// traz as bibliotecas necessárias. Fallback para @sparticuz se existir.
+const fs = require('fs');
+let puppeteer = null, sparticuz = null, engine = 'none', sysChromePath = null;
+try { puppeteer = require('puppeteer-core'); } catch (e) { /* ver package.json */ }
+// procurar o Chromium do sistema em caminhos comuns (nixpacks/Debian)
 try {
-  sparticuz = require('@sparticuz/chromium');
-  puppeteer = require('puppeteer-core');
-  engine = 'sparticuz';
-} catch (e1) {
-  try { puppeteer = require('puppeteer'); engine = 'puppeteer'; }
-  catch (e2) { /* nenhum instalado — a rota devolverá erro explicativo */ }
+  const cands = [
+    process.env.PUPPETEER_EXECUTABLE_PATH,
+    process.env.CHROMIUM_PATH,
+    '/usr/bin/chromium', '/usr/bin/chromium-browser',
+    '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable',
+  ].filter(Boolean);
+  for (const c of cands) { try { if (fs.existsSync(c)) { sysChromePath = c; break; } } catch(_){} }
+} catch(_){}
+if (sysChromePath && puppeteer) {
+  engine = 'system';
+} else {
+  try { sparticuz = require('@sparticuz/chromium'); if (puppeteer) engine = 'sparticuz'; }
+  catch (e1) {
+    try { puppeteer = require('puppeteer'); engine = 'puppeteer'; } catch (e2) {}
+  }
 }
 
 function esc(t){ return String(t==null?'':t).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
@@ -917,7 +929,13 @@ function buildHtml(a){
 
 async function renderPdf(html){
   let launchOpts;
-  if (engine === 'sparticuz') {
+  if (engine === 'system') {
+    launchOpts = {
+      args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--single-process'],
+      executablePath: sysChromePath,
+      headless: 'new',
+    };
+  } else if (engine === 'sparticuz') {
     launchOpts = {
       args: [...sparticuz.args, '--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage'],
       defaultViewport: sparticuz.defaultViewport,
