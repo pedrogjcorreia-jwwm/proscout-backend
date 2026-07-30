@@ -762,7 +762,28 @@ app.get('/fix/cf-takeover', async (req, res) => {
 //
 // Uso no server.js:
 //   const { registerCardPdfRoute } = require('./card_pdf');
-//   registerCardPdfRoute(app, pool);
+//   // ── DIAGNÓSTICO temporário do Chromium ──
+app.get('/agents/_diag/chromium', (req, res) => {
+  const fs = require('fs');
+  const { execSync } = require('child_process');
+  const paths = ['/usr/bin/chromium','/usr/bin/chromium-browser','/usr/bin/google-chrome','/usr/bin/google-chrome-stable','/root/.cache/puppeteer','/tmp/chromium'];
+  const found = {};
+  paths.forEach(pp=>{ try{ found[pp]=fs.existsSync(pp); }catch(e){ found[pp]='err'; } });
+  let which='';
+  try{ which=execSync('which chromium chromium-browser google-chrome 2>/dev/null || true').toString(); }catch(e){ which=String(e.message); }
+  let ldd='';
+  try{ if(fs.existsSync('/usr/bin/chromium')) ldd=execSync('ldd /usr/bin/chromium 2>&1 | grep -i "not found" || echo "todas as libs OK (/usr/bin/chromium)"').toString(); }catch(e){ ldd=String(e.message); }
+  res.json({
+    engine_detetado: engine,
+    sysChromePath: sysChromePath,
+    env_PUPPETEER_EXECUTABLE_PATH: process.env.PUPPETEER_EXECUTABLE_PATH || null,
+    paths_existem: found,
+    which: which.trim(),
+    libs_em_falta: ldd.trim(),
+  });
+});
+
+registerCardPdfRoute(app, pool);
 //
 // Requer:  npm i puppeteer
 // (No Railway: o puppeteer descarrega o Chromium no build. Se falhar, ver o
