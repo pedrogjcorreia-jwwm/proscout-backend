@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libcairo2 \
     libatspi2.0-0 \
     fonts-liberation \
+    fonts-noto-color-emoji \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -35,6 +36,11 @@ COPY package*.json ./
 RUN npm install --omit=dev
 
 # copiar o resto do código
+COPY . .
+
+EXPOSE 3000
+CMD ["node", "server.js"]
+
 COPY . .
 
 EXPOSE 3000
