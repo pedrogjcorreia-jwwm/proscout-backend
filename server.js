@@ -791,8 +791,8 @@ registerCardPdfRoute(app, pool);
 // ═══════════════════════════════════════════════════════════════════════════
 
 // Carregamento do motor de render.
-// No Railway usamos o Chromium do SISTEMA (instalado via nixpacks.toml), que já
-// traz as bibliotecas necessárias. Fallback para @sparticuz se existir.
+// No Railway usamos o Chromium do SISTEMA (instalado via Dockerfile, com o caminho
+// em PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium). Fallback para @sparticuz se existir.
 const fs = require('fs');
 let puppeteer = null, sparticuz = null, engine = 'none', sysChromePath = null;
 try { puppeteer = require('puppeteer-core'); } catch (e) { /* ver package.json */ }
