@@ -881,7 +881,7 @@ function buildHtml(a){
     ? '<div class="tile compact" style="--c:#4da0ff"><div class="glow"></div><span class="badge"><svg viewBox="0 0 24 24"><polygon points="12,0.8 14.25,3.6 17.6,2.3 18.15,5.85 21.7,6.4 20.4,9.75 23.2,12 20.4,14.25 21.7,17.6 18.15,18.15 17.6,21.7 14.25,20.4 12,23.2 9.75,20.4 6.4,21.7 5.85,18.15 2.3,17.6 3.6,14.25 0.8,12 3.6,9.75 2.3,6.4 5.85,5.85 6.4,2.3 9.75,3.6" fill="#3897f0"/><path d="M8.2 12.3 l2.6 2.6 l5.0 -5.4" fill="none" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg></span><div class="ctext"><div class="v">Agente FIFA</div><div class="s">Licenciado</div></div></div>'
     : '<div class="tile compact" style="--c:#4da0ff"><div class="glow"></div><div class="ctext"><div class="v">Agente</div><div class="s">de Jogadores</div></div></div>';
 
-  const tileCountry = '<div class="tile compact" style="--c:#4da0ff"><div class="glow"></div><div class="ctext"><div class="v">'+esc(countryName||'—')+'</div>'+(langs?'<div class="s">'+esc(langs)+'</div>':'<div class="s">País</div>')+'</div></div>';
+  const tileCountry = '<div class="tile compact" style="--c:#4da0ff"><div class="glow"></div><div class="ctext"><div class="v">'+esc(countryName||'—')+'</div>'+(langs?'<div class="s">Idiomas: '+esc(langs)+'</div>':'<div class="s">País</div>')+'</div></div>';
 
   return `<!DOCTYPE html><html lang="pt"><head><meta charset="UTF-8"><style>
   @page{size:460px 760px;margin:0}
