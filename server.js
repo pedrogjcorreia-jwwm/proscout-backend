@@ -841,8 +841,8 @@ function buildHtml(a){
   const name = a.agent_name || a.company || 'Agente';
   const org  = a.company || '';
   const active = (a.status !== 'inactive');
-  const status = active ? 'Agente Ativo' : 'Agente Inativo';
-  const dotCol = active ? '#43e5b0' : '#ff6b6b';
+  const status = 'Agent Tracker';        // rótulo interno, sempre igual
+  const dotCol = '#43e5b0';               // luz verde sempre, independente do estado
   const serial = 'THV · ' + (new Date().getFullYear());
   const players = (a.num_players||0);
   const mv = money(a.portfolio_val);
@@ -863,7 +863,7 @@ function buildHtml(a){
     const ini = name.split(' ').map(w=>w[0]).slice(0,2).join('').toUpperCase();
     avatar = '<span class="mono">'+esc(ini)+'</span>';
   }
-  const seal = fifa ? '<div class="seal"><svg viewBox="0 0 24 24"><path d="M4 12l5 5L20 6"/></svg></div>' : '';
+  const seal = ''; // selo verificado só aparece na box "Agente FIFA", não na foto
 
   // contactos
   const emailHtml = a.email
@@ -992,9 +992,10 @@ function registerCardPdfRoute(app, pool){
       const a = r.rows[0];
       const html = buildHtml(a);
       const pdf = await renderPdf(html);
-      const safe = String(a.agent_name || a.company || 'agente').replace(/[^a-zA-Z0-9]+/g,'_');
+      const safe = String(a.agent_name || a.company || 'agente').trim().replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+      const fname = 'THV.'+safe+'.pdf';
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', 'inline; filename="Thrivella_'+safe+'.pdf"');
+      res.setHeader('Content-Disposition', 'inline; filename="'+fname+'"');
       res.send(pdf);
     } catch (e) {
       console.error('card.pdf error:', e);
