@@ -992,7 +992,7 @@ function registerCardPdfRoute(app, pool){
       const a = r.rows[0];
       const html = buildHtml(a);
       const pdf = await renderPdf(html);
-      const safe = String(a.agent_name || a.company || 'agente').trim().replace(/[^a-zA-Z0-9]+/g,'_').replace(/^_+|_+$/g,'');
+      const safe = String(a.agent_name || a.company || 'agente').normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9]+/g,'');
       const fname = 'THV.'+safe+'.pdf';
       res.setHeader('Content-Type', 'application/pdf');
       res.setHeader('Content-Disposition', 'inline; filename="'+fname+'"');
