@@ -68,6 +68,8 @@ app.get('/setup', async (req, res) => {
       ALTER TABLE players ADD COLUMN IF NOT EXISTS aerial_pct NUMERIC;
       ALTER TABLE players ADD COLUMN IF NOT EXISTS header_goals NUMERIC;
       ALTER TABLE players ADD COLUMN IF NOT EXISTS goals NUMERIC;
+      ALTER TABLE players ADD COLUMN IF NOT EXISTS shot_int_adjtackl NUMERIC;
+      ALTER TABLE players ADD COLUMN IF NOT EXISTS prog_pass NUMERIC;
       CREATE INDEX IF NOT EXISTS idx_players_position_group ON players(position_group);
       CREATE INDEX IF NOT EXISTS idx_players_league ON players(league);
       CREATE INDEX IF NOT EXISTS idx_players_score ON players(score DESC NULLS LAST);
@@ -391,6 +393,77 @@ app.get('/import/cf', async (req, res) => {
   }
 });
 
+
+// ── GET /import/lwb — importa LWB_players.json (browser) ──
+app.get('/import/lwb', async (req, res) => {
+  try {
+    const fs = require('fs');
+    const raw = fs.readFileSync(__dirname + '/LWB_players.json', 'utf8');
+    const { position, players } = JSON.parse(raw);
+    if (!players || !Array.isArray(players)) return res.status(400).json({ error: 'Ficheiro invalido' });
+    const client = await pool.connect();
+    let inserted = 0, updated = 0;
+    const skipped = [];
+    try {
+      await client.query('BEGIN');
+      const others = await client.query("SELECT name, league FROM players WHERE position_group <> 'LWB'");
+      const otherKeys = new Set(others.rows.map(r => r.name + '|' + r.league));
+      for (const p of players) {
+        if (otherKeys.has(p.name + '|' + p.league)) { skipped.push({ name: p.name, league: p.league }); continue; }
+        const result = await client.query(
+          `INSERT INTO players (
+            name, country, team, league, league_level, position, position_group,
+            age, foot, size, weight, mkt_value, contract_end, matches, minutes,
+            xg, xa, fouls, yellows, def_duels, def_duels_pct, adj_intercept,
+            shots90, crosses90, crosses_pct, dribles90, dribles_pct,
+            box_touches, prog_carries, recpt_depth,
+            passes90, passes_pct, shot_assist, box_passes, prog_pass,
+            total_dist, hsr90, sprint_dist90, max_speed, sprints90, hsr_sprint_pct,
+            aerial_duels90, aerial_pct, shot_int_adjtackl,
+            total_def, total_off, total_pass, total, total_physical,
+            score, has_physical, imported_at
+          ) VALUES (
+            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
+            $16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,
+            $28,$29,$30,$31,$32,$33,$34,$35,
+            $36,$37,$38,$39,$40,$41,$42,$43,$44,
+            $45,$46,$47,$48,$49,$50,$51,NOW()
+          )
+          ON CONFLICT (name, league)
+          DO UPDATE SET
+            team=EXCLUDED.team, age=EXCLUDED.age, mkt_value=EXCLUDED.mkt_value,
+            contract_end=EXCLUDED.contract_end, matches=EXCLUDED.matches, minutes=EXCLUDED.minutes,
+            xg=EXCLUDED.xg, xa=EXCLUDED.xa, score=EXCLUDED.score,
+            total_off=EXCLUDED.total_off, total_def=EXCLUDED.total_def,
+            total_pass=EXCLUDED.total_pass, total_physical=EXCLUDED.total_physical,
+            shot_int_adjtackl=EXCLUDED.shot_int_adjtackl, prog_pass=EXCLUDED.prog_pass,
+            aerial_duels90=EXCLUDED.aerial_duels90, aerial_pct=EXCLUDED.aerial_pct,
+            has_physical=EXCLUDED.has_physical, imported_at=NOW()
+          RETURNING (xmax = 0) as is_insert`,
+          [
+            p.name, p.country, p.team, p.league, p.league_level || null, p.position, position,
+            p.age, p.foot, p.size, p.weight, p.mkt_value, p.contract_end, p.matches, p.minutes,
+            p.xg, p.xa, p.fouls, p.yellows, p.def_duels, p.def_duels_pct, p.adj_intercept,
+            p.shots90, p.crosses90, p.crosses_pct, p.dribles90, p.dribles_pct,
+            p.box_touches, p.prog_carries, p.recpt_depth,
+            p.passes90, p.passes_pct, p.shot_assist, p.box_passes, p.prog_pass,
+            p.total_dist, p.hsr90, p.sprint_dist90, p.max_speed, p.sprints90, p.hsr_sprint_pct,
+            p.aerial_duels90, p.aerial_pct, p.shot_int_adjtackl,
+            p.total_def, p.total_off, p.total_pass, p.total, p.total_physical,
+            p.score, p.has_physical,
+          ]
+        );
+        if (result.rows[0]?.is_insert) inserted++; else updated++;
+      }
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK'); throw e;
+    } finally { client.release(); }
+    res.json({ position, inserted, updated, skipped: skipped.length, skipped_players: skipped, total: players.length });
+  } catch (err) {
+    console.error(err); res.status(500).json({ error: err.message });
+  }
+});
 
 // ── GET /diag/cf-conflicts — jogadores do CF cujo (nome,liga) colide com outra posição na BD ──
 app.get('/diag/cf-conflicts', async (req, res) => {
