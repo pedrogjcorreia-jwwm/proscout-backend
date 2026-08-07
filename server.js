@@ -465,6 +465,29 @@ app.get('/import/lwb', async (req, res) => {
   }
 });
 
+// ── GET /diag/lwb-conflicts — os LWB do ficheiro que já existem noutra posição (com posição e score atuais) ──
+app.get('/diag/lwb-conflicts', async (req, res) => {
+  try {
+    const fs = require('fs');
+    const { players } = JSON.parse(fs.readFileSync(__dirname + '/LWB_players.json', 'utf8'));
+    const lwbScore = {};
+    players.forEach(p => { lwbScore[p.name + '|' + p.league] = p.score; });
+    const lwbKeys = new Set(Object.keys(lwbScore));
+    const r = await pool.query("SELECT name, league, position_group, position, score FROM players WHERE position_group <> 'LWB'");
+    const conflicts = r.rows
+      .filter(row => lwbKeys.has(row.name + '|' + row.league))
+      .map(row => ({
+        name: row.name, league: row.league,
+        current_position_group: row.position_group,
+        current_position: row.position,
+        current_score: row.score,
+        lwb_score: lwbScore[row.name + '|' + row.league]
+      }))
+      .sort((a, b) => (b.lwb_score || 0) - (a.lwb_score || 0));
+    res.json({ conflict_count: conflicts.length, conflicts });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── GET /diag/cf-conflicts — jogadores do CF cujo (nome,liga) colide com outra posição na BD ──
 app.get('/diag/cf-conflicts', async (req, res) => {
   try {
