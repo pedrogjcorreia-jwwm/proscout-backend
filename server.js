@@ -465,6 +465,31 @@ app.get('/import/lwb', async (req, res) => {
   }
 });
 
+// ── GET /fix/lwb-takeover — remove versao antiga (WIN/CF) dos jogadores marcados para sair, para que /import/lwb os insira em LWB ──
+app.get('/fix/lwb-takeover', async (req, res) => {
+  try {
+    const fs = require('fs');
+    const { move_to_lwb } = JSON.parse(fs.readFileSync(__dirname + '/lwb_takeover_list.json', 'utf8'));
+    if (!move_to_lwb || !Array.isArray(move_to_lwb)) return res.status(400).json({ error: 'Lista invalida' });
+    const client = await pool.connect();
+    let removed = 0;
+    const removedList = [];
+    try {
+      await client.query('BEGIN');
+      for (const m of move_to_lwb) {
+        const r = await client.query(
+          "DELETE FROM players WHERE name = $1 AND league = $2 AND position_group <> 'LWB' RETURNING position_group",
+          [m.name, m.league]
+        );
+        if (r.rowCount > 0) { removed += r.rowCount; removedList.push({ name: m.name, league: m.league, from: r.rows[0].position_group }); }
+      }
+      await client.query('COMMIT');
+    } catch (e) { await client.query('ROLLBACK'); throw e; }
+    finally { client.release(); }
+    res.json({ removed, removed_players: removedList, note: 'Agora corre /import/lwb para inserir estes jogadores em LWB' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── GET /diag/lwb-conflicts — os LWB do ficheiro que já existem noutra posição (com posição e score atuais) ──
 app.get('/diag/lwb-conflicts', async (req, res) => {
   try {
