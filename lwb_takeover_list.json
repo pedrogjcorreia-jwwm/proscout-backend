@@ -1,0 +1,304 @@
+{
+  "move_to_lwb": [
+    {
+      "name": "Pedrinho",
+      "league": "Ukraine1"
+    },
+    {
+      "name": "M. Zeke",
+      "league": "Hungary1"
+    },
+    {
+      "name": "K. Saief",
+      "league": "Israel1"
+    },
+    {
+      "name": "E. Çelebi",
+      "league": "Germany3"
+    },
+    {
+      "name": "Hugo Bueno",
+      "league": "England1"
+    },
+    {
+      "name": "J. Mayorga",
+      "league": "Switzerland2"
+    },
+    {
+      "name": "J. Madsen",
+      "league": "Denmark2"
+    },
+    {
+      "name": "F. Ferraro",
+      "league": "Belgium1"
+    },
+    {
+      "name": "A. Sørensen",
+      "league": "Denmark1"
+    },
+    {
+      "name": "D. Kuzyk",
+      "league": "Ukraine1"
+    },
+    {
+      "name": "A. Lyaskov",
+      "league": "Bulgary1"
+    },
+    {
+      "name": "D. Soltész",
+      "league": "Hungary1"
+    },
+    {
+      "name": "Kiko",
+      "league": "Cyprus1"
+    },
+    {
+      "name": "E. Stehrer",
+      "league": "Austria2"
+    },
+    {
+      "name": "António Infante",
+      "league": "Portugal3"
+    },
+    {
+      "name": "L. Pecelj",
+      "league": "Montenegro1"
+    },
+    {
+      "name": "J. Nkeng",
+      "league": "England3"
+    },
+    {
+      "name": "R. Keller",
+      "league": "Israel1"
+    },
+    {
+      "name": "T. Bach",
+      "league": "Denmark1"
+    },
+    {
+      "name": "S. Oganesyan",
+      "league": "Russia1"
+    },
+    {
+      "name": "Pablo Pérez",
+      "league": "Spain2"
+    },
+    {
+      "name": "Ž. Udovičić",
+      "league": "Serbia1"
+    },
+    {
+      "name": "A. Chévez",
+      "league": "Costa Rica1"
+    },
+    {
+      "name": "S. Plătică",
+      "league": "Moldavia1"
+    },
+    {
+      "name": "James",
+      "league": "Armenia1"
+    },
+    {
+      "name": "C. Cissé",
+      "league": "France3"
+    },
+    {
+      "name": "J. Bernardez",
+      "league": "Costa Rica1"
+    },
+    {
+      "name": "D. Dell'Erba",
+      "league": "Italy3"
+    },
+    {
+      "name": "N. Covalischii",
+      "league": "Moldavia1"
+    },
+    {
+      "name": "V. Dumbrava",
+      "league": "Moldavia1"
+    },
+    {
+      "name": "Fernando Medrano",
+      "league": "Spain2"
+    },
+    {
+      "name": "R. Bolaños",
+      "league": "Costa Rica1"
+    },
+    {
+      "name": "M. Llano",
+      "league": "Italy3"
+    },
+    {
+      "name": "L. Maraš",
+      "league": "Montenegro1"
+    },
+    {
+      "name": "S. Pedersen",
+      "league": "Denmark2"
+    },
+    {
+      "name": "N. Krsmanović",
+      "league": "Serbia1"
+    },
+    {
+      "name": "L. Sommer",
+      "league": "Germany3"
+    },
+    {
+      "name": "M. Gragger",
+      "league": "Austria2"
+    },
+    {
+      "name": "F. Holzhacker",
+      "league": "Austria2"
+    },
+    {
+      "name": "Y. Shevchenko",
+      "league": "Ukraine1"
+    },
+    {
+      "name": "H. Teklab",
+      "league": "Belgium1"
+    },
+    {
+      "name": "M. Expérience",
+      "league": "France2"
+    },
+    {
+      "name": "Bruno Pereira",
+      "league": "Portugal2"
+    },
+    {
+      "name": "Paulo Victor",
+      "league": "Portugal1"
+    },
+    {
+      "name": "L. Klitten",
+      "league": "Denmark2"
+    },
+    {
+      "name": "R. Bezrukov",
+      "league": "Russia1"
+    },
+    {
+      "name": "M. Hancock",
+      "league": "England4"
+    },
+    {
+      "name": "L. Lučić",
+      "league": "Poland1"
+    },
+    {
+      "name": "T. Grippon",
+      "league": "France3"
+    },
+    {
+      "name": "T. Lutonda",
+      "league": "Belgium1"
+    },
+    {
+      "name": "M. Macchi",
+      "league": "Italy3"
+    },
+    {
+      "name": "Igor Milioransa",
+      "league": "Portugal2"
+    },
+    {
+      "name": "Talocha",
+      "league": "Portugal3"
+    },
+    {
+      "name": "Fahem Benaïssa",
+      "league": "Portugal1"
+    },
+    {
+      "name": "Manel Royo",
+      "league": "Spain3"
+    },
+    {
+      "name": "O. Osman",
+      "league": "Ukraine2"
+    },
+    {
+      "name": "Carlos Nieto",
+      "league": "Spain3"
+    },
+    {
+      "name": "Rui Ferreira",
+      "league": "Portugal3"
+    },
+    {
+      "name": "T. Paulo da Silva",
+      "league": "Belgium2"
+    },
+    {
+      "name": "D. Ólafsson",
+      "league": "Greece1"
+    },
+    {
+      "name": "I. Rozhkov",
+      "league": "Russia1"
+    },
+    {
+      "name": "M. Tarloyan",
+      "league": "Armenia1"
+    },
+    {
+      "name": "M. Hennig",
+      "league": "Austria1"
+    },
+    {
+      "name": "D. Ólafsson",
+      "league": "Poland1"
+    },
+    {
+      "name": "S. Medgyes",
+      "league": "Hungary1"
+    },
+    {
+      "name": "Joel Ferreira",
+      "league": "Portugal3"
+    },
+    {
+      "name": "Y. Kozyrenko",
+      "league": "Ukraine2"
+    },
+    {
+      "name": "D. Herrera",
+      "league": "Costa Rica1"
+    },
+    {
+      "name": "O. Kébé",
+      "league": "Belgium2"
+    },
+    {
+      "name": "Noah Barholt Rasmussen",
+      "league": "Denmark2"
+    },
+    {
+      "name": "E. Aytun",
+      "league": "Germany3"
+    },
+    {
+      "name": "G. Méndez",
+      "league": "Costa Rica1"
+    },
+    {
+      "name": "I. Goranov",
+      "league": "Bulgary1"
+    },
+    {
+      "name": "B. Bonilla",
+      "league": "Costa Rica1"
+    },
+    {
+      "name": "D. Baciu",
+      "league": "Moldavia1"
+    }
+  ]
+}
