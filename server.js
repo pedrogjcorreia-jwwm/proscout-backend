@@ -490,6 +490,14 @@ app.get('/fix/lwb-takeover', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ── GET /fix/lwb-to-lb — renomeia position_group LWB -> LB ──
+app.get('/fix/lwb-to-lb', async (req, res) => {
+  try {
+    const r = await pool.query("UPDATE players SET position_group='LB' WHERE position_group='LWB' RETURNING id");
+    res.json({ updated: r.rowCount, note: 'position_group LWB -> LB' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── GET /diag/lwb-conflicts — os LWB do ficheiro que já existem noutra posição (com posição e score atuais) ──
 app.get('/diag/lwb-conflicts', async (req, res) => {
   try {
