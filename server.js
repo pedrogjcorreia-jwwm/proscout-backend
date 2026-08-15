@@ -36,6 +36,20 @@ app.get('/cleanup/cf', async (req, res) => {
   }
 });
 
+app.get('/cleanup/lb', async (req, res) => {
+  try {
+    const result = await pool.query("DELETE FROM players WHERE position_group = 'LB'");
+    res.json({ deleted: result.rowCount, position: 'LB', message: 'LB players deleted. Others kept.' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/cleanup/rb', async (req, res) => {
+  try {
+    const result = await pool.query("DELETE FROM players WHERE position_group = 'RB'");
+    res.json({ deleted: result.rowCount, position: 'RB', message: 'RB players deleted. Others kept.' });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── Setup — creates all tables (run once) ─────────────────────────────────
 app.get('/setup', async (req, res) => {
   try {
