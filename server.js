@@ -50,6 +50,19 @@ app.get('/cleanup/rb', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ── Diagnóstico LB: estado atual da base de dados (só leitura) ──
+app.get('/diag/lb-check', async (req, res) => {
+  try {
+    const total = await pool.query('SELECT COUNT(*)::int AS c FROM players');
+    const byGroup = await pool.query('SELECT position_group, COUNT(*)::int AS c FROM players GROUP BY position_group ORDER BY c DESC');
+    const lbRemaining = await pool.query("SELECT COUNT(*)::int AS c FROM players WHERE position_group = 'LB'");
+    const winWithLb = await pool.query("SELECT COUNT(*)::int AS c FROM players WHERE position_group = 'WIN' AND position ILIKE '%LB%'");
+    const otherWithLb = await pool.query("SELECT position_group, COUNT(*)::int AS c FROM players WHERE position_group <> 'LB' AND position ILIKE '%LB%' GROUP BY position_group ORDER BY c DESC");
+    const sample = await pool.query("SELECT name, league, position, position_group FROM players WHERE position_group <> 'LB' AND position ILIKE '%LB%' ORDER BY position_group LIMIT 40");
+    res.json({ total: total.rows[0].c, by_group: byGroup.rows, lb_remaining: lbRemaining.rows[0].c, win_with_lb_in_position: winWithLb.rows[0].c, other_groups_with_lb: otherWithLb.rows, sample: sample.rows });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── Setup — creates all tables (run once) ─────────────────────────────────
 app.get('/setup', async (req, res) => {
   try {
