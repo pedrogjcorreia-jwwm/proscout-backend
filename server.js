@@ -276,7 +276,11 @@ app.post('/import/players', async (req, res) => {
     try {
       await client.query('BEGIN');
 
+      let skippedOtherGroup = 0;
       for (const p of players) {
+        // existing_group_skip: não sobrescrever jogadores que já existem noutro grupo (ex.: WIN/CF)
+        const _ex = await client.query('SELECT position_group FROM players WHERE name=$1 AND league=$2 LIMIT 1', [p.name, p.league]);
+        if (_ex.rows.length && _ex.rows[0].position_group && _ex.rows[0].position_group !== position) { skippedOtherGroup++; continue; }
         const result = await client.query(
           `INSERT INTO players (
             name, country, team, league, league_level, position, position_group,
@@ -341,7 +345,7 @@ app.post('/import/players', async (req, res) => {
       client.release();
     }
 
-    res.json({ inserted, updated, total: players.length });
+    res.json({ skipped_other_group: skippedOtherGroup, inserted, updated, total: players.length });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
