@@ -66,9 +66,13 @@ app.get('/diag/lb-check', async (req, res) => {
 // ── Fix nomes de liga (normaliza para os nomes canónicos do frontend) ──
 app.get('/fix/league-names', async (req, res) => {
   try {
-    const r1 = await pool.query("UPDATE players SET league='Czech1' WHERE league='Czechia1'");
-    const r2 = await pool.query("UPDATE players SET league='Croatia1' WHERE league='Croacia1'");
-    res.json({ 'Czechia1->Czech1': r1.rowCount, 'Croacia1->Croatia1': r2.rowCount });
+    // 1. apagar duplicados do import (mesmo nome já existe com o nome de liga canónico)
+    const d1 = await pool.query("DELETE FROM players p WHERE p.league='Czechia1' AND EXISTS (SELECT 1 FROM players q WHERE q.name=p.name AND q.league='Czech1')");
+    const d2 = await pool.query("DELETE FROM players p WHERE p.league='Croacia1' AND EXISTS (SELECT 1 FROM players q WHERE q.name=p.name AND q.league='Croatia1')");
+    // 2. renomear os restantes (sem duplicado)
+    const u1 = await pool.query("UPDATE players SET league='Czech1' WHERE league='Czechia1'");
+    const u2 = await pool.query("UPDATE players SET league='Croatia1' WHERE league='Croacia1'");
+    res.json({ czech: { deleted_dupes: d1.rowCount, renamed: u1.rowCount }, croatia: { deleted_dupes: d2.rowCount, renamed: u2.rowCount } });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
