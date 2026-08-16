@@ -271,12 +271,11 @@ app.post('/import/players', async (req, res) => {
     }
 
     const client = await pool.connect();
-    let inserted = 0, updated = 0;
+    let inserted = 0, updated = 0, skippedOtherGroup = 0;
 
     try {
       await client.query('BEGIN');
 
-      let skippedOtherGroup = 0;
       for (const p of players) {
         // existing_group_skip: não sobrescrever jogadores que já existem noutro grupo (ex.: WIN/CF)
         const _ex = await client.query('SELECT position_group FROM players WHERE name=$1 AND league=$2 LIMIT 1', [p.name, p.league]);
