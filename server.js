@@ -63,6 +63,15 @@ app.get('/diag/lb-check', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// ── Fix nomes de liga (normaliza para os nomes canónicos do frontend) ──
+app.get('/fix/league-names', async (req, res) => {
+  try {
+    const r1 = await pool.query("UPDATE players SET league='Czech1' WHERE league='Czechia1'");
+    const r2 = await pool.query("UPDATE players SET league='Croatia1' WHERE league='Croacia1'");
+    res.json({ 'Czechia1->Czech1': r1.rowCount, 'Croacia1->Croatia1': r2.rowCount });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── Setup — creates all tables (run once) ─────────────────────────────────
 app.get('/setup', async (req, res) => {
   try {
