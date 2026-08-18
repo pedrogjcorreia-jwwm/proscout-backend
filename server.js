@@ -63,6 +63,21 @@ app.get('/diag/lb-check', async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+app.get('/diag/find', async (req, res) => {
+  try {
+    const name = req.query.name || '';
+    const r = await pool.query('SELECT name, team, league, position, position_group, score FROM players WHERE name ILIKE $1 ORDER BY position_group', ['%'+name+'%']);
+    res.json({ query: name, count: r.rowCount, players: r.rows });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.get('/diag/dupes', async (req, res) => {
+  try {
+    const r = await pool.query('SELECT name, COUNT(*)::int AS c, array_agg(position_group) AS groups, array_agg(league) AS leagues FROM players GROUP BY name HAVING COUNT(*)>1 ORDER BY c DESC, name LIMIT 100');
+    res.json({ duplicate_names: r.rowCount, rows: r.rows });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
 // ── Fix nomes de liga (normaliza para os nomes canónicos do frontend) ──
 app.get('/fix/league-names', async (req, res) => {
   try {
