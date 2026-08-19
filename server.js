@@ -293,7 +293,7 @@ app.post('/shadows', async (req, res) => {
 // Accepts the JSON output of import_excel.py
 app.post('/import/players', async (req, res) => {
   try {
-    const { position, players, weights } = req.body;
+    const { position, players, weights, forceGroup } = req.body;
     if (!players || !Array.isArray(players)) {
       return res.status(400).json({ error: 'Invalid payload' });
     }
@@ -307,7 +307,10 @@ app.post('/import/players', async (req, res) => {
       for (const p of players) {
         // existing_group_skip: não sobrescrever jogadores que já existem noutro grupo (ex.: WIN/CF)
         const _ex = await client.query('SELECT position_group FROM players WHERE name=$1 AND league=$2 LIMIT 1', [p.name, p.league]);
-        if (_ex.rows.length && _ex.rows[0].position_group && _ex.rows[0].position_group !== position) { skippedOtherGroup++; continue; }
+        if (_ex.rows.length && _ex.rows[0].position_group && _ex.rows[0].position_group !== position) {
+          if (forceGroup) { await client.query('DELETE FROM players WHERE name=$1 AND league=$2', [p.name, p.league]); }
+          else { skippedOtherGroup++; continue; }
+        }
         const result = await client.query(
           `INSERT INTO players (
             name, country, team, league, league_level, position, position_group,
