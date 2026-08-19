@@ -66,7 +66,7 @@ app.get('/diag/lb-check', async (req, res) => {
 app.get('/diag/find', async (req, res) => {
   try {
     const name = req.query.name || '';
-    const r = await pool.query('SELECT name, team, league, position, position_group, score, xg, xa, total_off FROM players WHERE name ILIKE $1 ORDER BY position_group', ['%'+name+'%']);
+    const r = await pool.query('SELECT name, team, league, position, position_group, xg, shot_int_adjtackl, adj_intercept, aerial_duels90, prog_pass FROM players WHERE name ILIKE $1 ORDER BY position_group', ['%'+name+'%']);
     res.json({ query: name, count: r.rowCount, players: r.rows });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
