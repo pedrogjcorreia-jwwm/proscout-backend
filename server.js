@@ -323,12 +323,13 @@ app.post('/import/players', async (req, res) => {
             total_def, total_off, total_pass, total, total_physical,
             score, has_physical,
             off_duels90, off_duels_pct, aerial_duels90, aerial_pct, header_goals, goals,
+            shot_int_adjtackl, prog_pass,
             imported_at
           ) VALUES (
             $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
             $16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26,$27,$28,$29,
             $30,$31,$32,$33,$34,$35,$36,$37,$38,$39,$40,$41,$42,$43,$44,
-            $45,$46,$47,$48,$49,$50,$51,$52,$53,$54,$55,$56,$57,NOW()
+            $45,$46,$47,$48,$49,$50,$51,$52,$53,$54,$55,$56,$57,$58,$59,NOW()
           )
           ON CONFLICT (name, league)
           DO UPDATE SET
@@ -337,7 +338,9 @@ app.post('/import/players', async (req, res) => {
             xg=EXCLUDED.xg, xa=EXCLUDED.xa, score=EXCLUDED.score,
             total_off=EXCLUDED.total_off, total_def=EXCLUDED.total_def,
             total_pass=EXCLUDED.total_pass, total_physical=EXCLUDED.total_physical,
-            has_physical=EXCLUDED.has_physical, imported_at=NOW()
+            has_physical=EXCLUDED.has_physical,
+            shot_int_adjtackl=EXCLUDED.shot_int_adjtackl, prog_pass=EXCLUDED.prog_pass,
+            imported_at=NOW()
           RETURNING (xmax = 0) as is_insert`,
           [
             p.name, p.country, p.team, p.league, p.league_level || null, p.position, position,
@@ -350,6 +353,7 @@ app.post('/import/players', async (req, res) => {
             p.total_def, p.total_off, p.total_pass, p.total, p.total_physical,
             p.score, p.has_physical,
             p.off_duels90||null, p.off_duels_pct||null, p.aerial_duels90||null, p.aerial_pct||null, p.header_goals||null, p.goals||null,
+            p.shot_int_adjtackl||null, p.prog_pass||null,
           ]
         );
         if (result.rows[0]?.is_insert) inserted++; else updated++;
