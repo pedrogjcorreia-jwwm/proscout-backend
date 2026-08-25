@@ -125,6 +125,8 @@ app.get('/setup', async (req, res) => {
       ALTER TABLE players ADD COLUMN IF NOT EXISTS goals NUMERIC;
       ALTER TABLE players ADD COLUMN IF NOT EXISTS shot_int_adjtackl NUMERIC;
       ALTER TABLE players ADD COLUMN IF NOT EXISTS prog_pass NUMERIC;
+      ALTER TABLE players ADD COLUMN IF NOT EXISTS passes_final_third NUMERIC;
+      ALTER TABLE players ADD COLUMN IF NOT EXISTS prog_pass_pct NUMERIC;
       CREATE INDEX IF NOT EXISTS idx_players_position_group ON players(position_group);
       CREATE INDEX IF NOT EXISTS idx_players_league ON players(league);
       CREATE INDEX IF NOT EXISTS idx_players_score ON players(score DESC NULLS LAST);
@@ -643,6 +645,106 @@ app.post('/import/lb', async (req, res) => {
              VALUES ($1, $2, $3)
              ON CONFLICT (position_group, metric_key) DO UPDATE SET weight = $3`,
             [position, metric, weight]
+          );
+        }
+      }
+
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+
+    res.json({ skipped_other_group: skippedOtherGroup, inserted, updated, total: players.length });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
+
+// ── /import/cb ── dedicado a CB (18 metricas + passes_final_third + prog_pass_pct) ──────────────
+app.post('/import/cb', async (req, res) => {
+  try {
+    const { position, players, weights, forceGroup } = req.body;
+    if (!players || !Array.isArray(players)) {
+      return res.status(400).json({ error: 'Invalid payload' });
+    }
+
+    const client = await pool.connect();
+    let inserted = 0, updated = 0, skippedOtherGroup = 0;
+
+    try {
+      await client.query('BEGIN');
+
+      for (const p of players) {
+        const _grp = position || 'CB';
+        const _hasPhy = (p.max_speed != null || p.sprint_dist90 != null);
+        // existing_group_skip: não sobrescrever jogadores que já existem noutro grupo
+        const _ex = await client.query('SELECT position_group FROM players WHERE name=$1 AND league=$2 LIMIT 1', [p.name, p.league]);
+        if (_ex.rows.length && _ex.rows[0].position_group && _ex.rows[0].position_group !== _grp) {
+          if (forceGroup) { await client.query('DELETE FROM players WHERE name=$1 AND league=$2', [p.name, p.league]); }
+          else { skippedOtherGroup++; continue; }
+        }
+        const result = await client.query(
+          `INSERT INTO players (
+            name, country, team, league, league_level, position, position_group,
+            age, foot, size, weight, mkt_value, contract_end, matches, minutes,
+            xg, fouls, yellows,
+            def_duels, def_duels_pct, aerial_duels90, aerial_pct,
+            shot_int_adjtackl, adj_intercept,
+            prog_carries, passes90, passes_pct, passes_final_third, prog_pass, prog_pass_pct,
+            sprint_dist90, max_speed, accels90, sprints90,
+            total_def, total_off, total_pass, total, total_physical,
+            score, has_physical, imported_at
+          ) VALUES (
+            $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,
+            $16,$17,$18,$19,$20,$21,$22,$23,$24,
+            $25,$26,$27,$28,$29,$30,$31,$32,$33,$34,
+            $35,$36,$37,$38,$39,$40,$41,NOW()
+          )
+          ON CONFLICT (name, league)
+          DO UPDATE SET
+            team=EXCLUDED.team, age=EXCLUDED.age, mkt_value=EXCLUDED.mkt_value,
+            contract_end=EXCLUDED.contract_end, matches=EXCLUDED.matches, minutes=EXCLUDED.minutes,
+            xg=EXCLUDED.xg, fouls=EXCLUDED.fouls, yellows=EXCLUDED.yellows,
+            def_duels=EXCLUDED.def_duels, def_duels_pct=EXCLUDED.def_duels_pct,
+            aerial_duels90=EXCLUDED.aerial_duels90, aerial_pct=EXCLUDED.aerial_pct,
+            shot_int_adjtackl=EXCLUDED.shot_int_adjtackl, adj_intercept=EXCLUDED.adj_intercept,
+            prog_carries=EXCLUDED.prog_carries, passes90=EXCLUDED.passes90, passes_pct=EXCLUDED.passes_pct,
+            passes_final_third=EXCLUDED.passes_final_third, prog_pass=EXCLUDED.prog_pass, prog_pass_pct=EXCLUDED.prog_pass_pct,
+            sprint_dist90=EXCLUDED.sprint_dist90, max_speed=EXCLUDED.max_speed,
+            accels90=EXCLUDED.accels90, sprints90=EXCLUDED.sprints90,
+            total_def=EXCLUDED.total_def, total_off=EXCLUDED.total_off,
+            total_pass=EXCLUDED.total_pass, total_physical=EXCLUDED.total_physical,
+            score=EXCLUDED.score, has_physical=EXCLUDED.has_physical, imported_at=NOW()
+          RETURNING (xmax = 0) as is_insert`,
+          [
+            p.name, p.country, p.team, p.league, p.league_level || null, p.position || 'CB', _grp,
+            p.age, p.foot, p.size, p.weight, p.mkt_value, p.contract_end, p.matches, p.minutes,
+            p.xg, p.fouls, p.yellows,
+            p.def_duels, p.def_duels_pct, p.aerial_duels90, p.aerial_pct,
+            p.shot_int_adjtackl, p.adj_intercept,
+            p.prog_carries, p.passes90, p.passes_pct, p.passes_final_third, p.prog_pass, p.prog_pass_pct,
+            p.sprint_dist90, p.max_speed, p.accels90, p.sprints90,
+            p.total_def, p.total_off, p.total_pass, p.total, p.total_physical,
+            p.score, _hasPhy,
+          ]
+        );
+        if (result.rows[0]?.is_insert) inserted++; else updated++;
+      }
+
+      // Upsert weights
+      if (weights) {
+        for (const [metric, weight] of Object.entries(weights)) {
+          await client.query(
+            `INSERT INTO metrics_config (position_group, metric_key, weight)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (position_group, metric_key) DO UPDATE SET weight = $3`,
+            [position || 'CB', metric, weight]
           );
         }
       }
