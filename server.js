@@ -835,7 +835,7 @@ app.post('/import/dm', async (req, res) => {
             p.prog_carries, p.passes90, p.passes_pct, p.shot_assist, p.passes_final_third, p.prog_pass, p.prog_pass_pct,
             p.total_dist, p.hsr90, p.sprint_dist90, p.max_speed, p.nr_hsr90, p.hsr_sprint_pct,
             p.total_def, p.total_off, p.total_pass, p.total, p.total_physical,
-            p.score, _hasPhy,
+            (p.score != null ? p.score : p.total), _hasPhy,
           ]
         );
         if (result.rows[0]?.is_insert) inserted++; else updated++;
